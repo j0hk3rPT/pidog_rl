@@ -82,7 +82,17 @@ class VisualizeCallback(BaseCallback):
         # Create a separate environment for visualization
         # This avoids interfering with the training environment
         try:
-            env = PiDogEnv(use_camera=self.use_camera)
+            # Auto-detect if model uses camera observations
+            use_camera = self.use_camera
+            if not use_camera:
+                # Check if model has MultiInputPolicy (uses camera)
+                policy_class_name = self.model.policy.__class__.__name__
+                if "MultiInput" in policy_class_name:
+                    use_camera = True
+                    if self.verbose > 0:
+                        print(f"Detected {policy_class_name}, enabling camera observations")
+
+            env = PiDogEnv(use_camera=use_camera)
 
             # Launch viewer with the environment's model and data
             with mujoco.viewer.launch_passive(env.model, env.data) as viewer:
