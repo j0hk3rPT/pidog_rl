@@ -6,6 +6,11 @@ import mujoco
 import mujoco.viewer
 from pathlib import Path
 from stable_baselines3.common.callbacks import BaseCallback
+import sys
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from pidog_env import PiDogEnv
 
 
 class VisualizeCallback(BaseCallback):
@@ -22,6 +27,7 @@ class VisualizeCallback(BaseCallback):
         n_eval_episodes: int = 1,
         render_fps: int = 30,
         max_steps_per_episode: int = 500,
+        use_camera: bool = False,
         verbose: int = 0,
     ):
         """
@@ -32,6 +38,7 @@ class VisualizeCallback(BaseCallback):
             n_eval_episodes: Number of episodes to visualize
             render_fps: Frames per second for real-time rendering
             max_steps_per_episode: Maximum steps per visualization episode
+            use_camera: Whether to use camera observations
             verbose: Verbosity level
         """
         super().__init__(verbose)
@@ -39,6 +46,7 @@ class VisualizeCallback(BaseCallback):
         self.n_eval_episodes = n_eval_episodes
         self.render_fps = render_fps
         self.max_steps_per_episode = max_steps_per_episode
+        self.use_camera = use_camera
         self.frame_time = 1.0 / render_fps
         self.last_visualization = 0
 
@@ -71,17 +79,12 @@ class VisualizeCallback(BaseCallback):
         print(f"Episodes: {self.n_eval_episodes}")
         print("\n" + "="*70 + "\n")
 
-        # Get the environment from the training environment
-        # Note: For vectorized envs, we use the first environment
-        if hasattr(self.training_env, 'envs'):
-            # Vectorized environment
-            env = self.training_env.envs[0].unwrapped
-        else:
-            # Single environment
-            env = self.training_env.unwrapped
-
-        # Launch viewer with the environment's model and data
+        # Create a separate environment for visualization
+        # This avoids interfering with the training environment
         try:
+            env = PiDogEnv(use_camera=self.use_camera)
+
+            # Launch viewer with the environment's model and data
             with mujoco.viewer.launch_passive(env.model, env.data) as viewer:
                 viewer.opt.sitegroup[0] = True  # Show sensor sites
 
@@ -91,7 +94,7 @@ class VisualizeCallback(BaseCallback):
                         break
 
                     print(f"\nEpisode {episode + 1}/{self.n_eval_episodes}")
-                    obs = env.reset()[0] if isinstance(env.reset(), tuple) else env.reset()
+                    obs, _ = env.reset()
                     episode_reward = 0
                     step_count = 0
 
@@ -102,14 +105,7 @@ class VisualizeCallback(BaseCallback):
                         action, _ = self.model.predict(obs, deterministic=True)
 
                         # Step environment
-                        step_result = env.step(action)
-                        if len(step_result) == 5:
-                            obs, reward, terminated, truncated, info = step_result
-                        else:
-                            obs, reward, done, info = step_result
-                            terminated = done
-                            truncated = False
-
+                        obs, reward, terminated, truncated, info = env.step(action)
                         episode_reward += reward
                         step_count += 1
 
@@ -138,8 +134,13 @@ class VisualizeCallback(BaseCallback):
                     if not viewer.is_running():
                         break
 
+            # Clean up visualization environment
+            env.close()
+
         except Exception as e:
             print(f"\nVisualization error: {e}")
+            import traceback
+            traceback.print_exc()
             print("Continuing training...")
 
         print("\n" + "="*70)
@@ -163,6 +164,7 @@ class PeriodicVisualizeCallback(BaseCallback):
         visualize: bool = True,
         n_eval_episodes: int = 2,
         render_fps: int = 30,
+        use_camera: bool = False,
         verbose: int = 1,
     ):
         """
@@ -175,6 +177,7 @@ class PeriodicVisualizeCallback(BaseCallback):
             visualize: Whether to visualize after saving
             n_eval_episodes: Number of episodes to visualize
             render_fps: Frames per second for visualization
+            use_camera: Whether to use camera observations
             verbose: Verbosity level
         """
         super().__init__(verbose)
@@ -185,6 +188,7 @@ class PeriodicVisualizeCallback(BaseCallback):
         self.visualize = visualize
         self.n_eval_episodes = n_eval_episodes
         self.render_fps = render_fps
+        self.use_camera = use_camera
         self.frame_time = 1.0 / render_fps
 
     def _on_step(self) -> bool:
@@ -209,11 +213,11 @@ class PeriodicVisualizeCallback(BaseCallback):
             visualize_freq=float('inf'),  # Only visualize when called
             n_eval_episodes=self.n_eval_episodes,
             render_fps=self.render_fps,
+            use_camera=self.use_camera,
             verbose=self.verbose,
         )
-        # Set up the visualizer with current model and environment
+        # Set up the visualizer with current model
         visualizer.model = self.model
-        visualizer.training_env = self.training_env
         visualizer.num_timesteps = self.num_timesteps
 
         # Run visualization
