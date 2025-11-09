@@ -26,13 +26,23 @@ RUN apt-get update && apt-get install -y \
     git \
     wget \
     curl \
-    # Python development
-    python3-dev \
+    # Python 3.11 (required for imitation library compatibility)
+    software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa -y \
+    && apt-get update \
+    && apt-get install -y \
+    python3.11 \
+    python3.11-dev \
+    python3.11-venv \
     python3-pip \
     # Additional utilities
     vim \
     htop \
     && rm -rf /var/lib/apt/lists/*
+
+# Set Python 3.11 as default
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 \
+    && update-alternatives --set python3 /usr/bin/python3.11
 
 # Install UV package manager
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh

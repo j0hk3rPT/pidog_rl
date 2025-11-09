@@ -3,7 +3,7 @@ name = "pidog_rl"
 version = "0.1.0"
 description = "Reinforcement Learning and Imitation Learning for PiDog Quadruped Robot"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.13"
 dependencies = [
     # Core dependencies
     "cvxpy>=1.6.6",
@@ -26,8 +26,8 @@ dependencies = [
     "flax>=0.10.0",
     "optax>=0.2.4",
 
-    # Imitation learning
-    "imitation>=1.1.0",
+    # Imitation learning (latest stable version compatible with Python 3.11)
+    "imitation>=1.0.0,<2.0.0",
 
     # Additional ML tools
     "wandb>=0.18.7",
