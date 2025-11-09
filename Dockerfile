@@ -12,10 +12,14 @@ RUN apt-get update && apt-get install -y \
     # MuJoCo dependencies
     libglew-dev \
     libosmesa6-dev \
-    libgl1-mesa-glx \
+    libgl1 \
     libglfw3 \
     libglfw3-dev \
     patchelf \
+    # X11 and GUI support
+    libx11-6 \
+    libxext6 \
+    libxrender1 \
     # Build tools
     build-essential \
     cmake \
