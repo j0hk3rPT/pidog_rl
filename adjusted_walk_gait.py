@@ -37,8 +37,8 @@ def simple_walk_gait_adjusted(num_steps=48):
     base_knee = -np.pi / 3  # -60° (more bent knees)
 
     # Front/back spacing offset
-    front_offset = 0.15  # Front legs ~9° forward
-    back_offset = -0.15  # Back legs ~9° back
+    front_offset = 0.3  # Front legs ~17° forward
+    back_offset = -0.3  # Back legs ~17° back
 
     # Front legs neutral
     front_hip = base_hip + front_offset
