@@ -81,7 +81,7 @@ class PiDogEnv(gym.Env):
         # Servo specifications (SunFounder SF006FM 9g Digital Servo)
         # Real hardware constraints for sim-to-real transfer
         self.servo_specs = {
-            "range": (0, np.pi),              # 0-180° in radians
+            "range": (-np.pi/2, np.pi),       # Extended range to support negative angles
             "max_torque": 0.137,              # Nm (at 6V)
             "min_torque": 0.127,              # Nm (at 4.8V)
             "max_speed": 7.0,                 # rad/s (400°/s)
@@ -89,12 +89,16 @@ class PiDogEnv(gym.Env):
             "voltage_range": (4.8, 6.0),      # Operating voltage
         }
 
-        # Joint limits (based on real servo: 0-180°)
-        # Centered at π/2 (90°), with ±π/2 range
+        # Joint limits (extended to support found neutral angles)
+        # Hip neutral: -30° (-π/6), Knee neutral: -45° (-π/4)
         self.joint_limits = {
-            "shoulder": (0, np.pi),           # 0-180° full range
-            "knee": (0, np.pi),               # 0-180° full range
+            "hip": (-np.pi/2, np.pi),         # -90° to 180° range
+            "knee": (-np.pi/2, np.pi),        # -90° to 180° range
         }
+
+        # Neutral standing angles (found by systematic search)
+        self.neutral_hip = -np.pi / 6     # -30°
+        self.neutral_knee = -np.pi / 4    # -45°
 
         # Previous action for velocity limiting
         self.prev_action = None
@@ -147,15 +151,15 @@ class PiDogEnv(gym.Env):
         Scale normalized action [-1, 1] to actual joint limits with servo constraints.
 
         Applies realistic servo limitations:
-        - Range: 0-180° (0 to π radians)
+        - Range: -90° to 180° (-π/2 to π radians)
         - Max speed: 7.0 rad/s (400°/s)
         """
         scaled_action = np.zeros_like(action)
 
-        # For each joint, scale to its limits (all servos have 0-180° range)
+        # For each joint, scale to its limits
         for i in range(self.n_joints):
             low, high = self.servo_specs["range"]
-            # Map from [-1, 1] to [0, π]
+            # Map from [-1, 1] to [-π/2, π]
             scaled_action[i] = low + (action[i] + 1.0) * 0.5 * (high - low)
 
         # Apply velocity limiting (simulate servo speed constraints)
@@ -174,30 +178,39 @@ class PiDogEnv(gym.Env):
 
     def _compute_reward(self):
         """Compute reward based on current state."""
-        # Forward velocity reward
+        # Forward velocity reward - maximize forward speed!
         forward_vel = self.data.qvel[0]
-        velocity_reward = -abs(forward_vel - self.target_forward_velocity)
+        # Reward positive forward velocity, penalize backward
+        velocity_reward = forward_vel
 
-        # Height reward (penalize if body is too low)
+        # Bonus for reaching target speed
+        if forward_vel >= self.target_forward_velocity:
+            velocity_reward += 1.0
+
+        # Height reward (penalize if body is too low/high)
         body_height = self.data.qpos[2]
-        target_height = 0.15  # Target height in meters
-        height_reward = -abs(body_height - target_height)
+        target_height = 0.14  # Target height in meters (based on neutral standing height)
+        height_penalty = -2.0 * abs(body_height - target_height)
 
         # Stability reward (penalize large roll/pitch)
         body_quat = self.data.qpos[3:7]
-        # Convert quaternion to roll, pitch
-        # Simple approximation: penalize non-upright orientation
-        upright_reward = body_quat[3]  # w component (1 = upright, 0 = sideways)
+        # w component (1 = upright, 0 = sideways)
+        upright_reward = 2.0 * (body_quat[3] - 0.7)  # Bonus for staying upright
 
-        # Energy penalty (penalize large actions)
-        action_penalty = -0.01 * np.sum(np.square(self.data.ctrl))
+        # Energy penalty (encourage efficiency, penalize excessive movement)
+        action_penalty = -0.005 * np.sum(np.square(self.data.ctrl))
+
+        # Lateral movement penalty (penalize sideways drift)
+        lateral_vel = abs(self.data.qvel[1])
+        lateral_penalty = -0.5 * lateral_vel
 
         # Combine rewards
         reward = (
-            2.0 * velocity_reward +
-            1.0 * height_reward +
-            1.0 * upright_reward +
-            action_penalty
+            3.0 * velocity_reward +      # Prioritize forward speed
+            1.0 * height_penalty +
+            1.5 * upright_reward +
+            action_penalty +
+            lateral_penalty
         )
 
         return reward
@@ -231,13 +244,16 @@ class PiDogEnv(gym.Env):
         if seed is not None:
             np.random.seed(seed)
 
-        # Randomize initial joint positions slightly around neutral (π/2)
-        # Servos start at mid-range (90°)
-        neutral_pos = np.pi / 2
-        self.data.qpos[7:15] = neutral_pos + np.random.uniform(-0.1, 0.1, 8)
+        # Randomize initial joint positions slightly around neutral
+        # Use correct neutral angles: hip=-30°, knee=-45°
+        for i in range(4):  # 4 legs
+            # Hip joints (even indices)
+            self.data.qpos[7 + i*2] = self.neutral_hip + np.random.uniform(-0.1, 0.1)
+            # Knee joints (odd indices)
+            self.data.qpos[7 + i*2 + 1] = self.neutral_knee + np.random.uniform(-0.1, 0.1)
 
-        # Set body to target height
-        self.data.qpos[2] = 0.15
+        # Set body to target height (based on neutral standing height)
+        self.data.qpos[2] = 0.14
 
         # Forward the simulation to settle
         mujoco.mj_forward(self.model, self.data)
