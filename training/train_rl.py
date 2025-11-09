@@ -25,6 +25,15 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from pidog_env import PiDogEnv
 from pidog_env.feature_extractors import PiDogCombinedExtractor, PiDogNatureCNNExtractor
 
+# Try to import imitation for BC pretraining
+try:
+    from imitation.algorithms import bc
+    from imitation.data.types import Transitions
+    IMITATION_AVAILABLE = True
+except ImportError:
+    IMITATION_AVAILABLE = False
+    print("Warning: 'imitation' package not available, BC pretraining disabled")
+
 
 def parse_args():
     """Parse command line arguments."""
@@ -117,7 +126,12 @@ def parse_args():
     parser.add_argument(
         "--use-camera",
         action="store_true",
-        help="Use camera observations (requires MultiInputPolicy)",
+        help="Enable camera observations (image input will be actual camera feed)",
+    )
+    parser.add_argument(
+        "--disable-camera",
+        action="store_true",
+        help="Disable camera rendering (image input will be zeros for faster training)",
     )
     parser.add_argument(
         "--camera-width",
@@ -142,6 +156,29 @@ def parse_args():
         action="store_true",
         help="Use deeper Nature DQN architecture (slower but more powerful)",
     )
+    parser.add_argument(
+        "--pretrain-bc",
+        action="store_true",
+        help="Pretrain with behavioral cloning before RL",
+    )
+    parser.add_argument(
+        "--bc-demos-path",
+        type=str,
+        default="datasets/sunfounder_demos.pkl",
+        help="Path to demonstration data for BC pretraining",
+    )
+    parser.add_argument(
+        "--bc-epochs",
+        type=int,
+        default=50,
+        help="Number of BC pretraining epochs",
+    )
+    parser.add_argument(
+        "--bc-gait",
+        type=str,
+        default="trot_forward",
+        help="Specific gait to use from demos (or 'all')",
+    )
     return parser.parse_args()
 
 
@@ -159,27 +196,193 @@ def make_env(rank, seed=0, use_camera=True, camera_width=84, camera_height=84):
     return _init
 
 
+def load_demonstrations(demos_path, gait_name=None):
+    """Load demonstration actions from pickle file."""
+    import pickle
+
+    print(f"Loading demonstrations from {demos_path}...")
+    with open(demos_path, 'rb') as f:
+        dataset = pickle.load(f)
+
+    actions = dataset['actions']
+    labels = dataset['labels']
+
+    if gait_name and gait_name != 'all':
+        # Filter for specific gait
+        gait_indices = [i for i, label in enumerate(labels) if label == gait_name]
+        if not gait_indices:
+            raise ValueError(f"Gait '{gait_name}' not found in dataset")
+
+        # Get full cycle(s) - repeat multiple times for more training data
+        cycle_length = 6 if 'trot' in gait_name else 49
+        n_cycles = 10  # Use 10 cycles for more diverse transitions
+        actions = actions[gait_indices[:cycle_length]]
+        actions = np.tile(actions, (n_cycles, 1))  # Repeat the cycle
+        print(f"Loaded {len(actions)} steps ({n_cycles} cycles) for gait '{gait_name}'")
+    else:
+        print(f"Loaded {len(actions)} total steps from all gaits")
+
+    return actions
+
+
+def collect_transitions(env, actions, n_repeats=5):
+    """Execute actions in env to collect (obs, action, next_obs, done) transitions."""
+    print(f"Collecting transitions by executing {len(actions)} actions {n_repeats} times...")
+
+    obs_list = []
+    acts_list = []
+    next_obs_list = []
+    dones_list = []
+
+    for repeat in range(n_repeats):
+        obs = env.reset()
+        if isinstance(obs, tuple):
+            obs = obs[0]  # Unwrap if reset returns (obs, info)
+
+        for action in actions:
+            # Handle dict observations (camera + vector) or simple vector observations
+            if isinstance(obs, dict):
+                # For dict obs, store as-is (BC can handle dict observations)
+                obs_list.append(obs)
+            else:
+                # For vector obs, ensure float32
+                obs_list.append(obs.astype(np.float32))
+
+            acts_list.append(action.astype(np.float32))
+
+            result = env.step(action)
+            if len(result) == 5:
+                next_obs, reward, terminated, truncated, info = result
+                done = terminated or truncated
+            else:
+                next_obs, reward, done, info = result
+
+            # Handle dict vs vector observations
+            if isinstance(next_obs, dict):
+                next_obs_list.append(next_obs)
+            else:
+                next_obs_list.append(next_obs.astype(np.float32))
+
+            dones_list.append(done)
+
+            obs = next_obs
+
+            if done:
+                obs = env.reset()
+                if isinstance(obs, tuple):
+                    obs = obs[0]
+
+        print(f"  Repeat {repeat + 1}/{n_repeats} complete")
+
+    # Create transitions based on observation type
+    if isinstance(obs_list[0], dict):
+        # Dict observations - convert list of dicts to dict of arrays
+        # Each key (e.g., 'image', 'vector') becomes a separate array
+        obs_dict = {}
+        next_obs_dict = {}
+
+        # Get all keys from first observation
+        keys = obs_list[0].keys()
+
+        for key in keys:
+            obs_dict[key] = np.array([obs[key] for obs in obs_list], dtype=np.float32)
+            next_obs_dict[key] = np.array([obs[key] for obs in next_obs_list], dtype=np.float32)
+
+        transitions = Transitions(
+            obs=obs_dict,
+            acts=np.array(acts_list, dtype=np.float32),
+            infos=np.array([{}] * len(obs_list)),
+            next_obs=next_obs_dict,
+            dones=np.array(dones_list, dtype=bool),
+        )
+    else:
+        # Vector observations - convert to numpy array
+        transitions = Transitions(
+            obs=np.array(obs_list, dtype=np.float32),
+            acts=np.array(acts_list, dtype=np.float32),
+            infos=np.array([{}] * len(obs_list)),
+            next_obs=np.array(next_obs_list, dtype=np.float32),
+            dones=np.array(dones_list, dtype=bool),
+        )
+
+    print(f"Collected {len(transitions)} transitions")
+    return transitions
+
+
+def pretrain_with_bc(model, transitions, args):
+    """Pretrain policy using behavioral cloning."""
+    if not IMITATION_AVAILABLE:
+        print("ERROR: 'imitation' package required for BC pretraining")
+        print("Install with: pip install imitation")
+        return model
+
+    print("\n" + "=" * 70)
+    print("PRETRAINING WITH BEHAVIORAL CLONING")
+    print("=" * 70)
+
+    # Save original device
+    original_device = model.device
+    print(f"Model device: {original_device}")
+
+    # Force BC training on CPU to avoid device placement issues with imitation library
+    bc_device = 'cpu'
+    print(f"BC training device: {bc_device} (imitation library works better on CPU)")
+
+    # Move model to CPU for BC training
+    if str(original_device) != 'cpu':
+        print("Moving model to CPU for BC training...")
+        model.policy.to(bc_device)
+
+    # Get observation and action spaces from the model's env
+    obs_space = model.observation_space
+    act_space = model.action_space
+
+    # Create BC trainer
+    bc_trainer = bc.BC(
+        observation_space=obs_space,
+        action_space=act_space,
+        demonstrations=transitions,
+        rng=np.random.default_rng(42),
+        device=bc_device,
+        batch_size=64,
+        policy=model.policy,  # Use the policy from our RL model
+    )
+
+    # Train
+    print(f"\nTraining for {args.bc_epochs} epochs...")
+    bc_trainer.train(n_epochs=args.bc_epochs)
+
+    # Move model back to original device
+    if str(original_device) != 'cpu':
+        print(f"\nMoving model back to {original_device}...")
+        model.policy.to(original_device)
+
+    print("BC pretraining complete!")
+    print("=" * 70 + "\n")
+
+    return model
+
+
 def create_algorithm(algorithm_name, env, args):
     """Create RL algorithm instance."""
-    # Select policy type based on camera usage
-    if args.use_camera:
-        policy_type = "MultiInputPolicy"
-        # Select feature extractor architecture
-        if args.use_nature_cnn:
-            extractor_class = PiDogNatureCNNExtractor
-            print("Using Nature DQN architecture (deeper CNN)")
-        else:
-            extractor_class = PiDogCombinedExtractor
-            print("Using standard combined CNN+MLP architecture")
+    # Always use MultiInputPolicy for compatibility across training stages
+    policy_type = "MultiInputPolicy"
 
-        policy_kwargs = {
-            "features_extractor_class": extractor_class,
-            "features_extractor_kwargs": {"features_dim": args.features_dim},
-        }
+    # Select feature extractor architecture
+    if args.use_nature_cnn:
+        extractor_class = PiDogNatureCNNExtractor
+        print("Using Nature DQN architecture (deeper CNN)")
     else:
-        policy_type = "MlpPolicy"
-        policy_kwargs = {}
-        print("Using MLP policy (vector observations only)")
+        extractor_class = PiDogCombinedExtractor
+        print("Using standard combined CNN+MLP architecture")
+
+    policy_kwargs = {
+        "features_extractor_class": extractor_class,
+        "features_extractor_kwargs": {"features_dim": args.features_dim},
+    }
+
+    if not args.use_camera:
+        print("Note: Camera disabled - image observations will be zeros")
 
     common_kwargs = {
         "env": env,
@@ -229,6 +432,10 @@ def create_algorithm(algorithm_name, env, args):
 def main():
     """Main training function."""
     args = parse_args()
+
+    # Handle camera flags (disable takes precedence)
+    if args.disable_camera:
+        args.use_camera = False
 
     # Set up experiment directory
     if args.experiment_name is None:
@@ -294,6 +501,47 @@ def main():
     # Print model info
     print(f"\nModel architecture:")
     print(model.policy)
+
+    # BC Pretraining (if requested)
+    if args.pretrain_bc and args.checkpoint is None:
+        if args.use_camera:
+            print("\nWARNING: BC pretraining with camera observations not yet supported")
+            print("The imitation library has issues with dict observation spaces.")
+            print("Skipping BC pretraining - will train from scratch with RL...")
+            print("\nTIP: For BC pretraining, run without --use-camera, then fine-tune with camera:")
+            print("  1. Train BC without camera: --pretrain-bc (no --use-camera)")
+            print("  2. Fine-tune with camera: --checkpoint <bc_model> --use-camera")
+        elif not IMITATION_AVAILABLE:
+            print("\nWARNING: BC pretraining requested but 'imitation' not installed")
+            print("Skipping BC pretraining...")
+        else:
+            print(f"\nLoading demonstrations for BC pretraining...")
+            demos_path = Path(args.bc_demos_path)
+            if not demos_path.exists():
+                print(f"WARNING: Demo file not found: {demos_path}")
+                print("Skipping BC pretraining...")
+            else:
+                # Load demonstrations
+                demo_actions = load_demonstrations(str(demos_path), args.bc_gait)
+
+                # Create single env for collecting transitions (no camera for BC)
+                temp_env = PiDogEnv(
+                    use_camera=False,
+                    camera_width=args.camera_width,
+                    camera_height=args.camera_height
+                )
+
+                # Collect transitions
+                transitions = collect_transitions(temp_env, demo_actions, n_repeats=5)
+                temp_env.close()
+
+                # Pretrain with BC
+                model = pretrain_with_bc(model, transitions, args)
+
+                # Save BC pretrained model
+                bc_model_path = experiment_dir / f"{args.algorithm}_bc_pretrained"
+                model.save(bc_model_path)
+                print(f"BC pretrained model saved to: {bc_model_path}")
 
     # Set up callbacks
     checkpoint_callback = CheckpointCallback(

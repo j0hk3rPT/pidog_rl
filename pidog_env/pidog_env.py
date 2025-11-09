@@ -2,6 +2,7 @@
 
 import numpy as np
 import mujoco
+from mujoco import viewer
 import gymnasium as gym
 from gymnasium import spaces
 from pathlib import Path
@@ -65,8 +66,11 @@ class PiDogEnv(gym.Env):
         # Rendering for visualization
         self.render_mode = render_mode
         self.renderer = None
+        self.viewer = None
         if render_mode == "human":
-            self.renderer = mujoco.viewer.launch_passive(self.model, self.data)
+            # Launch interactive MuJoCo viewer
+            self.viewer = viewer.launch_passive(self.model, self.data)
+            print("MuJoCo viewer launched successfully")
 
         # Initialize sensor IDs
         self._init_sensor_ids()
@@ -81,30 +85,22 @@ class PiDogEnv(gym.Env):
         #                     ang_vel (3) + height (1) + ultrasonic (1) + accel (3) = 31
         vector_obs_dim = 8 + 8 + 4 + 3 + 3 + 1 + 1 + 3  # = 31
 
-        if self.use_camera:
-            # MultiInput observation space: image + vector
-            self.observation_space = spaces.Dict({
-                "image": spaces.Box(
-                    low=0,
-                    high=255,
-                    shape=(camera_height, camera_width, 3),
-                    dtype=np.uint8
-                ),
-                "vector": spaces.Box(
-                    low=-np.inf,
-                    high=np.inf,
-                    shape=(vector_obs_dim,),
-                    dtype=np.float32
-                )
-            })
-        else:
-            # Vector-only observation space (for testing/debugging)
-            self.observation_space = spaces.Box(
+        # Always use Dict observation space for policy compatibility
+        # When camera is disabled, image will be filled with zeros
+        self.observation_space = spaces.Dict({
+            "image": spaces.Box(
+                low=0,
+                high=255,
+                shape=(camera_height, camera_width, 3),
+                dtype=np.uint8
+            ),
+            "vector": spaces.Box(
                 low=-np.inf,
                 high=np.inf,
                 shape=(vector_obs_dim,),
                 dtype=np.float32
             )
+        })
 
         # Action: target joint positions for 8 leg joints
         # Normalized to [-1, 1], will be scaled to actual joint limits
@@ -149,7 +145,7 @@ class PiDogEnv(gym.Env):
 
         # Episode tracking
         self.step_count = 0
-        self.max_steps = 1000
+        self.max_steps = 5000  # 100 seconds at 50Hz - gives more time to learn walking
 
         # Velocity history for stationary detection
         # Track forward velocity over ~1 second (depends on frame_skip and dt)
@@ -288,18 +284,14 @@ class PiDogEnv(gym.Env):
             imu_accel,        # [28:31]
         ]).astype(np.float32)
 
-        if self.use_camera:
-            # Get camera image
-            camera_obs = self._get_camera_obs()
+        # Get camera image (or zeros if camera disabled)
+        camera_obs = self._get_camera_obs()
 
-            # Return dict observation
-            return {
-                "image": camera_obs,
-                "vector": vector_obs
-            }
-        else:
-            # Return vector-only observation
-            return vector_obs
+        # Always return dict observation for policy compatibility
+        return {
+            "image": camera_obs,
+            "vector": vector_obs
+        }
 
     def _scale_action(self, action):
         """
@@ -543,8 +535,8 @@ class PiDogEnv(gym.Env):
         self.step_count += 1
 
         # Render if needed
-        if self.render_mode == "human" and self.renderer is not None:
-            self.renderer.sync()
+        if self.render_mode == "human" and self.viewer is not None:
+            self.viewer.sync()
 
         return obs, reward, terminated, truncated, info
 
@@ -563,9 +555,16 @@ class PiDogEnv(gym.Env):
 
     def close(self):
         """Clean up resources."""
+        # Close viewer - handle gracefully as it may already be closed
+        if self.viewer is not None:
+            try:
+                self.viewer.close()
+            except:
+                pass  # Viewer may already be closed
+            self.viewer = None
+
         if self.renderer is not None:
-            if self.render_mode == "human":
-                self.renderer.close()
+            self.renderer.close()
             self.renderer = None
 
         if self.camera_renderer is not None:

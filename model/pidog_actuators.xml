@@ -24,12 +24,14 @@
         <!-- Back Right Leg -->
         <position name="back_right_hip_actuator"
                   joint="back_right_hip"
+                  forcerange="-0.137 0.137"
                   kp="5.0"
                   kv="2.5"
                   gear="1"/>
 
         <position name="back_right_knee_actuator"
                   joint="back_right_knee"
+                  forcerange="-0.137 0.137"
                   kp="5.0"
                   kv="2.5"
                   gear="1"/>
@@ -37,12 +39,14 @@
         <!-- Front Right Leg -->
         <position name="front_right_hip_actuator"
                   joint="front_right_hip"
+                  forcerange="-0.137 0.137"
                   kp="5.0"
                   kv="2.5"
                   gear="1"/>
 
         <position name="front_right_knee_actuator"
                   joint="front_right_knee"
+                  forcerange="-0.137 0.137"
                   kp="5.0"
                   kv="2.5"
                   gear="1"/>
@@ -50,12 +54,14 @@
         <!-- Back Left Leg -->
         <position name="back_left_hip_actuator"
                   joint="back_left_hip"
+                  forcerange="-0.137 0.137"
                   kp="5.0"
                   kv="2.5"
                   gear="1"/>
 
         <position name="back_left_knee_actuator"
                   joint="back_left_knee"
+                  forcerange="-0.137 0.137"
                   kp="5.0"
                   kv="2.5"
                   gear="1"/>
@@ -63,12 +69,14 @@
         <!-- Front Left Leg -->
         <position name="front_left_hip_actuator"
                   joint="front_left_hip"
+                  forcerange="-0.137 0.137"
                   kp="5.0"
                   kv="2.5"
                   gear="1"/>
 
         <position name="front_left_knee_actuator"
                   joint="front_left_knee"
+                  forcerange="-0.137 0.137"
                   kp="5.0"
                   kv="2.5"
                   gear="1"/>
