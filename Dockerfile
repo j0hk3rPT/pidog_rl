@@ -37,7 +37,8 @@ RUN pip install --no-cache-dir \
     "stable-baselines3[extra]" \
     tensorboard \
     matplotlib \
-    numpy
+    numpy \
+    imitation
 
 # Set working directory (repo will be mounted here via docker-compose volume)
 WORKDIR /workspace/pidog_rl
