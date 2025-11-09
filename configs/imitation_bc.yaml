@@ -1,0 +1,22 @@
+# Behavioral Cloning Configuration for PiDog
+
+method: bc
+
+# Data
+expert_data: datasets/expert_demos.pkl
+
+# Training parameters
+n_epochs: 100
+batch_size: 64
+learning_rate: 0.001
+
+# Evaluation
+eval_episodes: 10
+
+# System
+seed: 42
+device: auto
+
+# Output
+output_dir: outputs
+experiment_name: null  # Auto-generated if null

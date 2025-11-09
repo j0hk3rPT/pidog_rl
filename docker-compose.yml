@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  pidog_rl:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pidog_rl:latest
+    container_name: pidog_rl_training
+
+    # GPU support for ROCm
+    devices:
+      - /dev/kfd
+      - /dev/dri
+
+    # Security options for ROCm
+    security_opt:
+      - seccomp:unconfined
+
+    # Group access for GPU
+    group_add:
+      - video
+
+    # Capabilities for debugging
+    cap_add:
+      - SYS_PTRACE
+
+    # IPC mode for shared memory
+    ipc: host
+
+    # Environment variables
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - MUJOCO_GL=${MUJOCO_GL:-glfw}
+      - PYTHONUNBUFFERED=1
+      - QT_X11_NO_MITSHM=1
+      - LIBGL_ALWAYS_INDIRECT=0
+      - HSA_OVERRIDE_GFX_VERSION=11.0.0
+      - ROCM_VISIBLE_DEVICES=0
+      - PYTORCH_ROCM_ARCH=gfx1100
+
+    # Volume mappings
+    volumes:
+      - .:/workspace/pidog_rl
+      - /tmp/.X11-unix:/tmp/.X11-unix
+
+    # Network mode (required for X11 GUI)
+    network_mode: host
+
+    # Interactive terminal
+    stdin_open: true
+    tty: true
+
+    # Restart policy
+    restart: unless-stopped
+
+    # Command
+    command: /bin/bash
