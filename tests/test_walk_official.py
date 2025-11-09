@@ -29,67 +29,60 @@ WALK_STEP_WIDTH = 0.080   # 80mm
 WALK_COG_OFFSET = -0.015  # Center of gravity: -15mm
 
 
-def leg_ik(y, z):
+def calculate_leg_angles(y_offset, z_height, is_stepping):
     """
-    Calculate hip and knee angles from foot position using inverse kinematics.
+    Calculate hip and knee angles for a leg position.
 
-    Based on official PiDog coordinate-to-angle conversion.
+    This is a simplified approach that directly maps to observed working angles.
 
     Args:
-        y: Forward/backward position (m)
-        z: Vertical position (m)
+        y_offset: Forward/backward offset from neutral (m)
+        z_height: Height of the body (m)
+        is_stepping: Whether this leg is currently stepping (lifted)
 
     Returns:
         (hip_angle, knee_angle) in radians
     """
-    # Distance from hip to foot
-    r = np.sqrt(y**2 + z**2)
+    # Neutral standing angles (observed to work at 45° knee)
+    hip_neutral = np.pi / 2      # 90°
+    knee_neutral = np.pi / 4     # 45° - more extended
 
-    # Clamp to reachable workspace
-    r = np.clip(r, abs(LEG_LENGTH - FOOT_LENGTH), LEG_LENGTH + FOOT_LENGTH)
+    # Map y_offset to hip angle change
+    # Forward movement rotates hip backward, backward movement rotates hip forward
+    hip_amplitude = 0.3  # radians (~17°)
+    hip_angle = hip_neutral + (y_offset / TROT_STEP_WIDTH) * hip_amplitude
 
-    # Knee angle using law of cosines
-    cos_knee = (LEG_LENGTH**2 + FOOT_LENGTH**2 - r**2) / (2 * LEG_LENGTH * FOOT_LENGTH)
-    cos_knee = np.clip(cos_knee, -1.0, 1.0)
-    knee_angle = np.arccos(cos_knee)
+    # Knee angle changes to lift the leg when stepping
+    knee_amplitude = 0.4  # radians (~23°)
+    if is_stepping:
+        # Lift leg by bending knee more
+        step_factor = 1.0  # Full step
+        knee_angle = knee_neutral + knee_amplitude * step_factor
+    else:
+        # Standing leg stays at neutral
+        knee_angle = knee_neutral
 
-    # Hip angle
-    alpha = np.arctan2(y, -z)  # Angle to target
-    cos_beta = (r**2 + LEG_LENGTH**2 - FOOT_LENGTH**2) / (2 * r * LEG_LENGTH)
-    cos_beta = np.clip(cos_beta, -1.0, 1.0)
-    beta = np.arccos(cos_beta)  # Angle from upper leg to target
-
-    hip_angle = alpha + beta
-
-    # Convert to servo range (0 to π, with π/2 as neutral)
-    # Adjust to match PiDog servo orientation
-    hip_servo = np.pi/2 - hip_angle
-    knee_servo = np.pi - knee_angle  # Knee servo is reversed
-
-    return hip_servo, knee_servo
+    return hip_angle, knee_angle
 
 
-def trotting_gait_official(t, frequency=1.0, forward=True):
+def trotting_gait_official(t, frequency=0.5, forward=True):
     """
     Official PiDog trotting gait pattern.
 
     Diagonal pairs move together:
-    - Pair 1: Front-left (leg 3) + Back-right (leg 1)
-    - Pair 2: Front-right (leg 2) + Back-left (leg 4)
+    - Pair 1: Back-right (0) + Front-left (3)
+    - Pair 2: Front-right (1) + Back-left (2)
 
     Args:
         t: Time in seconds
-        frequency: Gait frequency in Hz
+        frequency: Gait frequency in Hz (default 0.5 = 2 seconds per cycle)
         forward: True for forward, False for backward
 
     Returns:
         Array of 8 joint positions [back_right_hip, back_right_knee, ...]
     """
-    # Phase for diagonal pair switching
+    # Phase for diagonal pair switching (0 to 2π)
     phase = (2 * np.pi * frequency * t) % (2 * np.pi)
-
-    # Determine which pair is stepping
-    step_phase = phase / (2 * np.pi)  # 0 to 1
 
     # Direction
     direction = 1 if forward else -1
@@ -97,33 +90,31 @@ def trotting_gait_official(t, frequency=1.0, forward=True):
     # Calculate positions for each leg
     positions = []
 
-    # Leg mapping: 1=back_right, 2=front_right, 3=back_left, 4=front_left
-    # But in MuJoCo: [back_right, front_right, back_left, front_left]
+    # Leg order in MuJoCo: [back_right, front_right, back_left, front_left]
     for leg_idx in range(4):
         # Determine if this leg is in pair 1 or pair 2
-        # Pair 1 (legs 1,4): back_right (0) and front_left (3)
-        # Pair 2 (legs 2,3): front_right (1) and back_left (2)
-        in_pair_1 = (leg_idx == 0) or (leg_idx == 3)  # back_right or front_left
+        # Pair 1: back_right (0) and front_left (3)
+        # Pair 2: front_right (1) and back_left (2)
+        in_pair_1 = (leg_idx == 0) or (leg_idx == 3)
 
+        # Determine if this leg is currently stepping (lifted)
         if in_pair_1:
-            # Stepping when phase is 0 to π
-            theta = phase if phase < np.pi else 0
+            is_stepping = phase < np.pi
+            leg_phase = phase if is_stepping else 0
         else:
-            # Stepping when phase is π to 2π
-            theta = (phase - np.pi) if phase >= np.pi else 0
+            is_stepping = phase >= np.pi
+            leg_phase = (phase - np.pi) if is_stepping else 0
 
-        # Y position (forward/backward) using cosine
-        if (in_pair_1 and phase < np.pi) or (not in_pair_1 and phase >= np.pi):
-            # Stepping leg
-            y_offset = TROT_STEP_WIDTH * (np.cos(theta) - direction) / 2 * direction
-            z_pos = BODY_HEIGHT - TROT_STEP_HEIGHT * (theta / np.pi)
+        # Y offset (forward/backward) using cosine curve
+        if is_stepping:
+            # Stepping leg follows cosine curve
+            y_offset = TROT_STEP_WIDTH * (np.cos(leg_phase) - direction) / 2 * direction
         else:
-            # Standing leg (moves opposite direction)
+            # Standing leg is at opposite extreme
             y_offset = -TROT_STEP_WIDTH * direction / 2
-            z_pos = BODY_HEIGHT
 
         # Calculate servo angles
-        hip_angle, knee_angle = leg_ik(y_offset + TROT_COG_OFFSET, z_pos)
+        hip_angle, knee_angle = calculate_leg_angles(y_offset, BODY_HEIGHT, is_stepping)
         positions.extend([hip_angle, knee_angle])
 
     return np.array(positions)
@@ -154,10 +145,9 @@ def main():
     # Initialize at standing position
     data.qpos[2] = 0.15  # Initial height
 
-    # Calculate neutral standing position
-    neutral_y = 0.0
-    neutral_z = BODY_HEIGHT
-    hip_neutral, knee_neutral = leg_ik(neutral_y, neutral_z)
+    # Neutral standing angles
+    hip_neutral = np.pi / 2   # 90°
+    knee_neutral = np.pi / 4  # 45°
 
     print(f"\nNeutral angles:")
     print(f"  Hip: {np.degrees(hip_neutral):.1f}°")
