@@ -33,8 +33,9 @@ def trotting_gait(t, amplitude=0.6, frequency=1.5):
     """
     phase = 2 * np.pi * frequency * t
 
-    # Neutral position at π/2 (90°)
-    neutral = np.pi / 2
+    # Neutral positions - adjusted for proper standing
+    hip_neutral = np.pi / 2   # 90° for hips
+    knee_neutral = np.pi / 4  # 45° for knees (more extended than 90°)
 
     # Hip and knee offsets for walking
     hip_offset = amplitude * np.sin(phase)
@@ -42,18 +43,18 @@ def trotting_gait(t, amplitude=0.6, frequency=1.5):
 
     # Diagonal pairs move together
     # Back-right and front-left (pair 1)
-    back_right_hip = neutral + hip_offset
-    back_right_knee = neutral + knee_offset
+    back_right_hip = hip_neutral + hip_offset
+    back_right_knee = knee_neutral + knee_offset
 
-    front_left_hip = neutral + hip_offset
-    front_left_knee = neutral + knee_offset
+    front_left_hip = hip_neutral + hip_offset
+    front_left_knee = knee_neutral + knee_offset
 
     # Front-right and back-left (pair 2, opposite phase)
-    front_right_hip = neutral - hip_offset
-    front_right_knee = neutral - knee_offset
+    front_right_hip = hip_neutral - hip_offset
+    front_right_knee = knee_neutral - knee_offset
 
-    back_left_hip = neutral - hip_offset
-    back_left_knee = neutral - knee_offset
+    back_left_hip = hip_neutral - hip_offset
+    back_left_knee = knee_neutral - knee_offset
 
     # Return in order: back_right, front_right, back_left, front_left
     # Each with [hip, knee]
@@ -81,7 +82,8 @@ def walking_gait(t, amplitude=0.5, frequency=1.0):
         Array of 8 joint positions
     """
     phase = 2 * np.pi * frequency * t
-    neutral = np.pi / 2
+    hip_neutral = np.pi / 2   # 90° for hips
+    knee_neutral = np.pi / 4  # 45° for knees (more extended)
 
     # Create phase offsets for each leg (sequential)
     phases = [
@@ -93,8 +95,8 @@ def walking_gait(t, amplitude=0.5, frequency=1.0):
 
     positions = []
     for leg_phase in phases:
-        hip = neutral + amplitude * np.sin(leg_phase)
-        knee = neutral + amplitude * np.cos(leg_phase)
+        hip = hip_neutral + amplitude * np.sin(leg_phase)
+        knee = knee_neutral + amplitude * np.cos(leg_phase)
         positions.extend([hip, knee])
 
     return np.array(positions)
@@ -134,10 +136,17 @@ def main():
     # Set body height
     data.qpos[2] = 0.15  # Height of base
 
-    # Set all joints to neutral (90° = π/2)
-    neutral = np.pi / 2
-    for i in range(7, 15):  # Joint indices for legs
-        data.qpos[i] = neutral
+    # Set all joints to neutral positions
+    hip_neutral = np.pi / 2   # 90° for hips
+    knee_neutral = np.pi / 4  # 45° for knees
+
+    # Set hip joints (every other joint starting at 7)
+    for i in range(7, 15, 2):  # Hip joints: 7, 9, 11, 13
+        data.qpos[i] = hip_neutral
+
+    # Set knee joints (every other joint starting at 8)
+    for i in range(8, 15, 2):  # Knee joints: 8, 10, 12, 14
+        data.qpos[i] = knee_neutral
 
     # Forward kinematics to settle
     mujoco.mj_forward(model, data)
