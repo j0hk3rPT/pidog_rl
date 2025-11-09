@@ -33,9 +33,6 @@ RUN apt-get update && apt-get install -y \
 # Upgrade pip
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Set working directory
-WORKDIR /workspace/pidog_rl
-
 # Install Python dependencies
 RUN pip install --no-cache-dir \
     mujoco \
@@ -46,22 +43,8 @@ RUN pip install --no-cache-dir \
     matplotlib \
     numpy
 
-# Copy project files
-COPY model/ ./model/
-COPY pidog_env/ ./pidog_env/
-COPY training/ ./training/
-COPY configs/ ./configs/
-COPY build/ ./build/
-COPY tools/ ./tools/
-COPY tests/ ./tests/
-COPY res/ ./res/
-COPY scripts/ ./scripts/
-
-# Create directories for outputs
-RUN mkdir -p /workspace/pidog_rl/outputs \
-    /workspace/pidog_rl/logs \
-    /workspace/pidog_rl/checkpoints \
-    /workspace/pidog_rl/datasets
+# Set working directory (repo will be mounted here via docker-compose volume)
+WORKDIR /workspace/pidog_rl
 
 # Set up MuJoCo license path (if needed)
 ENV MUJOCO_LICENSE_PATH=/workspace/pidog_rl/.mujoco/mjkey.txt
