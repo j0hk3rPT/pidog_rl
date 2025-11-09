@@ -156,7 +156,7 @@
             </body>
 
             <!-- back left leg -->
-            <body name="back_left_hip" pos="-0.014 -0.005 0.01" euler="0.0 1.57075 0.0">
+            <body name="back_left_hip" pos="-0.012 -0.005 0.01" euler="0.0 1.57075 0.0">
 
                 <geom name="back_left_leg_b_c0" mass="0.00414" mesh="leg_b_c0" class="collision"/>
                 <geom name="back_left_leg_b_c1" mass="0.00414" mesh="leg_b_c1" class="collision"/>
@@ -204,7 +204,7 @@
             </body>
 
             <!-- front left leg -->
-            <body name="front_left_hip" pos="-0.014 0.09 0.01" euler="0.0 1.57075 0.0">
+            <body name="front_left_hip" pos="-0.012 0.09 0.01" euler="0.0 1.57075 0.0">
 
                 <geom name="front_left_leg_b_c0" mass="0.00414" mesh="leg_b_c0" class="collision"/>
                 <geom name="front_left_leg_b_c1" mass="0.00414" mesh="leg_b_c1" class="collision"/>
