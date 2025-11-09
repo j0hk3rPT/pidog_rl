@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  pidog_rl:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pidog_rl:latest
+    container_name: pidog_rl_training
+
+    # GPU support for ROCm
+    devices:
+      - /dev/kfd
+      - /dev/dri
+
+    # Security options for ROCm
+    security_opt:
+      - seccomp:unconfined
+
+    # Group access for GPU
+    group_add:
+      - video
+      - render
+
+    # Environment variables
+    environment:
+      - MUJOCO_GL=osmesa
+      - DISPLAY=${DISPLAY:-:0}
+      - HSA_OVERRIDE_GFX_VERSION=${HSA_OVERRIDE_GFX_VERSION:-}
+      - ROCM_VERSION=${ROCM_VERSION:-latest}
+
+    # Volume mappings
+    volumes:
+      # Mount project directory for development
+      - .:/workspace/pidog_rl
+      # Persist outputs, logs, and checkpoints
+      - ./outputs:/workspace/pidog_rl/outputs
+      - ./logs:/workspace/pidog_rl/logs
+      - ./checkpoints:/workspace/pidog_rl/checkpoints
+      - ./datasets:/workspace/pidog_rl/datasets
+      # X11 socket for GUI (optional)
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+
+    # Port mappings
+    ports:
+      - "6006:6006"  # TensorBoard
+      - "8888:8888"  # Jupyter (optional)
+
+    # Interactive terminal
+    stdin_open: true
+    tty: true
+
+    # Network mode
+    network_mode: host
+
+    # Restart policy
+    restart: unless-stopped
+
+    # Command
+    command: /bin/bash
+
+  # Optional: Separate TensorBoard service
+  tensorboard:
+    image: pidog_rl:latest
+    container_name: pidog_tensorboard
+    depends_on:
+      - pidog_rl
+    volumes:
+      - ./logs:/workspace/pidog_rl/logs
+    ports:
+      - "6007:6006"
+    command: tensorboard --logdir=/workspace/pidog_rl/logs --host=0.0.0.0 --port=6006
+    restart: unless-stopped
