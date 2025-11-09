@@ -20,60 +20,37 @@ services:
     # Group access for GPU
     group_add:
       - video
-      - render
+
+    # Capabilities for debugging
+    cap_add:
+      - SYS_PTRACE
+
+    # IPC mode for shared memory
+    ipc: host
 
     # Environment variables
     environment:
-      # Use 'glfw' for GUI window, 'osmesa' for headless rendering
-      - MUJOCO_GL=${MUJOCO_GL:-glfw}
       - DISPLAY=${DISPLAY:-:0}
+      - MUJOCO_GL=${MUJOCO_GL:-glfw}
+      - PYTHONUNBUFFERED=1
       - QT_X11_NO_MITSHM=1
       - LIBGL_ALWAYS_INDIRECT=0
       - HSA_OVERRIDE_GFX_VERSION=${HSA_OVERRIDE_GFX_VERSION:-}
-      - ROCM_VERSION=${ROCM_VERSION:-latest}
-      - XAUTHORITY=${XAUTHORITY:-$HOME/.Xauthority}
 
     # Volume mappings
     volumes:
-      # Mount project directory for development
       - .:/workspace/pidog_rl
-      # Persist outputs, logs, and checkpoints
-      - ./outputs:/workspace/pidog_rl/outputs
-      - ./logs:/workspace/pidog_rl/logs
-      - ./checkpoints:/workspace/pidog_rl/checkpoints
-      - ./datasets:/workspace/pidog_rl/datasets
-      # X11 socket for GUI
-      - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      # X11 authentication (for security)
-      - ${XAUTHORITY:-$HOME/.Xauthority}:/root/.Xauthority:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix
 
-    # Port mappings
-    ports:
-      - "6006:6006"  # TensorBoard
-      - "8888:8888"  # Jupyter (optional)
+    # Network mode (required for X11 GUI)
+    network_mode: host
 
     # Interactive terminal
     stdin_open: true
     tty: true
-
-    # Network mode
-    network_mode: host
 
     # Restart policy
     restart: unless-stopped
 
     # Command
     command: /bin/bash
-
-  # Optional: Separate TensorBoard service
-  tensorboard:
-    image: pidog_rl:latest
-    container_name: pidog_tensorboard
-    depends_on:
-      - pidog_rl
-    volumes:
-      - ./logs:/workspace/pidog_rl/logs
-    ports:
-      - "6007:6006"
-    command: tensorboard --logdir=/workspace/pidog_rl/logs --host=0.0.0.0 --port=6006
-    restart: unless-stopped
