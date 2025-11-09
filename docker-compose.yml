@@ -36,6 +36,8 @@ services:
       - QT_X11_NO_MITSHM=1
       - LIBGL_ALWAYS_INDIRECT=0
       - HSA_OVERRIDE_GFX_VERSION=${HSA_OVERRIDE_GFX_VERSION:-}
+      - ROCM_VISIBLE_DEVICES=0
+      - PYTORCH_ROCM_ARCH=gfx1100
 
     # Volume mappings
     volumes:
