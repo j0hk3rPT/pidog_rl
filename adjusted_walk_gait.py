@@ -31,14 +31,17 @@ def simple_walk_gait_adjusted(num_steps=48):
     Neutral adjustments:
     - Base angles: hip=-45°, knee=-45°
     - Front legs offset forward, back legs offset back for spacing
-    """
-    # Base neutral
-    base_hip = -np.pi / 4  # -45°
-    base_knee = -np.pi / 4  # -45°
 
-    # Front/back spacing offset
-    front_offset = 0.3  # Front legs ~17° forward
-    back_offset = -0.3  # Back legs ~17° back
+    Note: Actions are in [-1, 1] space, scaled by env to [-π/2, π/2]
+    To get -45° joint angle: action = -π/4 / (π/2) = -0.5
+    """
+    # Base neutral (action values for -45°)
+    base_hip = -np.pi / 4 / (np.pi / 2)  # -0.5 → -45° joint angle
+    base_knee = -np.pi / 4 / (np.pi / 2)  # -0.5 → -45° joint angle
+
+    # Front/back spacing offset (in action space)
+    front_offset = 0.3 / (np.pi / 2)  # ~17° forward
+    back_offset = -0.3 / (np.pi / 2)  # ~17° back
 
     # Front legs neutral
     front_hip = base_hip + front_offset
@@ -48,14 +51,15 @@ def simple_walk_gait_adjusted(num_steps=48):
     back_hip = base_hip + back_offset
     back_knee = base_knee
 
-    print(f"Adjusted neutral positions:")
-    print(f"  Front legs: hip={np.degrees(front_hip):.1f}°, knee={np.degrees(front_knee):.1f}°")
-    print(f"  Back legs:  hip={np.degrees(back_hip):.1f}°, knee={np.degrees(back_knee):.1f}°")
+    print(f"Adjusted neutral positions (action values):")
+    print(f"  Front legs: hip={front_hip:.3f}, knee={front_knee:.3f}")
+    print(f"  Back legs:  hip={back_hip:.3f}, knee={back_knee:.3f}")
+    print(f"  (These map to ~{np.degrees(front_hip * np.pi/2):.1f}° and ~{np.degrees(back_hip * np.pi/2):.1f}° joint angles)")
     print()
 
-    # Gait parameters
-    hip_swing = 0.3  # ±17° hip swing
-    knee_lift = 0.5  # ±29° knee lift
+    # Gait parameters (in action space)
+    hip_swing = 0.3 / (np.pi / 2)  # ±17° hip swing
+    knee_lift = 0.5 / (np.pi / 2)  # ±29° knee lift
 
     all_actions = []
 
@@ -86,23 +90,16 @@ def simple_walk_gait_adjusted(num_steps=48):
             BR_hip = back_hip
             BR_knee = back_knee
 
-        # MuJoCo order: BR, FR, BL, FL
-        angles = [
+        # MuJoCo order: BR, FR, BL, FL (already in action space [-1, 1])
+        action = [
             BR_hip, BR_knee,
             FR_hip, FR_knee,
             BL_hip, BL_knee,
             FL_hip, FL_knee,
         ]
 
-        # Normalize
-        ctrl_range_low = -np.pi/2
-        ctrl_range_high = np.pi
-
-        action = []
-        for angle in angles:
-            normalized = (angle - ctrl_range_low) / (ctrl_range_high - ctrl_range_low) * 2 - 1
-            normalized = np.clip(normalized, -1, 1)
-            action.append(normalized)
+        # Clip to valid action range
+        action = [np.clip(a, -1, 1) for a in action]
 
         all_actions.append(np.array(action, dtype=np.float32))
 
