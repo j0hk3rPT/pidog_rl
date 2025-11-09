@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  pidog_rl:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pidog_rl:latest
+    container_name: pidog_rl_training
+
+    # NVIDIA GPU support
+    runtime: nvidia
+
+    # Environment variables
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - MUJOCO_GL=${MUJOCO_GL:-glfw}
+      - PYTHONUNBUFFERED=1
+      - QT_X11_NO_MITSHM=1
+      - LIBGL_ALWAYS_INDIRECT=0
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+    # Volume mappings
+    volumes:
+      - .:/workspace/pidog_rl
+      - /tmp/.X11-unix:/tmp/.X11-unix
+
+    # Network mode (required for X11 GUI)
+    network_mode: host
+
+    # Interactive terminal
+    stdin_open: true
+    tty: true
+
+    # Restart policy
+    restart: unless-stopped
+
+    # Command
+    command: /bin/bash
