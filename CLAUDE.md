@@ -1,0 +1,1 @@
+- Before creating a file always verify there's really needed and there's nothing similar that can be edited, Ideally we want the least ammount of files, clean uneeded stuff when you find it
