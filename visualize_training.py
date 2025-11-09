@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import mujoco
 import mujoco.viewer
+import time
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -26,8 +27,8 @@ def find_latest_checkpoint(experiment_dir):
     checkpoints.sort(key=lambda x: x.stat().st_mtime, reverse=True)
     return checkpoints[0]
 
-def visualize_policy(model_path, num_episodes=5):
-    """Visualize the trained policy in 3D."""
+def visualize_policy(model_path, num_episodes=5, render_fps=30):
+    """Visualize the trained policy in 3D with real-time rendering."""
     print(f"\nLoading model from: {model_path}")
 
     # Load the trained model
@@ -45,19 +46,28 @@ def visualize_policy(model_path, num_episodes=5):
     print("  - Middle mouse: Pan")
     print("  - Space: Pause/Resume")
     print("  - Esc: Close viewer")
+    print(f"\nRendering at {render_fps} FPS (real-time)")
     print("\n" + "="*70 + "\n")
+
+    # Calculate frame time for real-time rendering
+    frame_time = 1.0 / render_fps
 
     # Launch viewer
     with mujoco.viewer.launch_passive(env.model, env.data) as viewer:
         viewer.opt.sitegroup[0] = True  # Show sensor sites
 
         for episode in range(num_episodes):
+            if not viewer.is_running():
+                break
+
             print(f"\nEpisode {episode + 1}/{num_episodes}")
             obs, _ = env.reset()
             episode_reward = 0
             step_count = 0
 
             while viewer.is_running():
+                step_start = time.time()
+
                 # Get action from policy
                 if isinstance(obs, dict):
                     action, _states = model.predict(obs, deterministic=True)
@@ -80,15 +90,18 @@ def visualize_policy(model_path, num_episodes=5):
 
                 if terminated or truncated:
                     print(f"  Episode ended: {step_count} steps, total reward: {episode_reward:.2f}")
+                    time.sleep(0.5)  # Brief pause before resetting
                     break
 
-            if not viewer.is_running():
-                break
+                # Control frame rate for real-time visualization
+                elapsed = time.time() - step_start
+                if elapsed < frame_time:
+                    time.sleep(frame_time - elapsed)
 
     env.close()
 
-def visualize_random_policy(num_steps=500):
-    """Visualize with random actions (if no checkpoint available)."""
+def visualize_random_policy(num_steps=500, render_fps=30):
+    """Visualize with random actions (if no checkpoint available) in real-time."""
     print("\nNo checkpoint found. Showing random policy...")
 
     env = PiDogEnv(use_camera=False)
@@ -102,7 +115,11 @@ def visualize_random_policy(num_steps=500):
     print("  - Middle mouse: Pan")
     print("  - Space: Pause/Resume")
     print("  - Esc: Close viewer")
+    print(f"\nRendering at {render_fps} FPS (real-time)")
     print("\n" + "="*70 + "\n")
+
+    # Calculate frame time for real-time rendering
+    frame_time = 1.0 / render_fps
 
     with mujoco.viewer.launch_passive(env.model, env.data) as viewer:
         viewer.opt.sitegroup[0] = True
@@ -111,6 +128,8 @@ def visualize_random_policy(num_steps=500):
         step_count = 0
 
         while viewer.is_running() and step_count < num_steps:
+            step_start = time.time()
+
             action = env.action_space.sample()
             obs, reward, terminated, truncated, info = env.step(action)
             step_count += 1
@@ -124,7 +143,13 @@ def visualize_random_policy(num_steps=500):
 
             if terminated or truncated:
                 print(f"  Episode ended at step {step_count}, resetting...")
+                time.sleep(0.5)  # Brief pause before resetting
                 obs, _ = env.reset()
+
+            # Control frame rate for real-time visualization
+            elapsed = time.time() - step_start
+            if elapsed < frame_time:
+                time.sleep(frame_time - elapsed)
 
     env.close()
 
