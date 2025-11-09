@@ -30,10 +30,7 @@ RUN apt-get update && apt-get install -y \
     htop \
     && rm -rf /var/lib/apt/lists/*
 
-# Upgrade pip and setuptools (skip wheel as it's managed by debian)
-RUN pip install --no-cache-dir --upgrade pip setuptools
-
-# Install Python dependencies
+# Install Python dependencies (using pip from base image)
 RUN pip install --no-cache-dir \
     mujoco \
     gymnasium \
