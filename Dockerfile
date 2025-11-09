@@ -42,13 +42,16 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 WORKDIR /workspace/pidog_rl
 
 # Copy project files
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock* ./
 COPY model/ ./model/
+COPY pidog_env/ ./pidog_env/
+COPY training/ ./training/
+COPY configs/ ./configs/
 COPY build/ ./build/
 COPY tools/ ./tools/
 COPY tests/ ./tests/
 COPY res/ ./res/
-COPY README.md ./
+COPY scripts/ ./scripts/
 
 # Install Python dependencies
 RUN uv sync
