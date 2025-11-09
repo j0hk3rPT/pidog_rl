@@ -30,6 +30,16 @@ docker-compose run --rm pidog_rl python extract_sunfounder_demos.py \
 
 **Time:** ~2-3 minutes
 
+**Verify demonstrations (optional but recommended):**
+```bash
+# Visualize the extracted gaits to verify accuracy
+docker-compose run --rm pidog_rl python visualize_demonstrations.py \
+    --demo-file demonstrations/sunfounder_demos.pkl \
+    --n-cycles 3
+```
+
+This shows the robot executing the extracted Sunfounder gaits in real-time so you can verify the kinematics conversion is correct.
+
 ### Step 2: Pre-train with Behavioral Cloning + Fine-tune with RL
 
 ```bash
@@ -181,6 +191,7 @@ pidog_rl/
 ├── VISUALIZATION_GUIDE.md             # Real-time visualization docs
 │
 ├── extract_sunfounder_demos.py        # Extract official PiDog gaits
+├── visualize_demonstrations.py        # Verify extracted demonstrations
 ├── train_pretrain_finetune.py         # BC→RL pipeline (RECOMMENDED)
 ├── train_with_visualization.py        # RL with real-time checkpoints
 ├── visualize_training.py              # Visualize trained models
@@ -239,11 +250,26 @@ python training/train_imitation.py \
 ### Visualization Commands
 
 ```bash
-# Visualize latest checkpoint
+# Visualize latest trained model
 python visualize_training.py
 
-# Visualize specific model
+# Visualize specific model checkpoint
 python visualize_training.py --checkpoint outputs/experiment/model.zip
+
+# Verify extracted demonstrations
+python visualize_demonstrations.py \
+    --demo-file demonstrations/sunfounder_demos.pkl \
+    --n-cycles 3
+
+# Analyze demonstration statistics only
+python visualize_demonstrations.py \
+    --demo-file demonstrations/sunfounder_demos.pkl \
+    --analyze-only
+
+# Slow-motion playback for inspection
+python visualize_demonstrations.py \
+    --demo-file demonstrations/sunfounder_demos.pkl \
+    --fps 10
 ```
 
 ## Environment Options
@@ -317,7 +343,28 @@ echo $DISPLAY
 
 ## Tips for Best Results
 
-### 1. Start with Recommended Workflow
+### 1. Verify Extracted Demonstrations
+
+Before training, verify that the demonstrations look correct:
+```bash
+# Extract demonstrations
+python extract_sunfounder_demos.py --n-cycles 20
+
+# Verify they look correct
+python visualize_demonstrations.py \
+    --demo-file demonstrations/sunfounder_demos.pkl \
+    --n-cycles 3
+```
+
+Watch the robot execute the gaits. They should show smooth walking/trotting with:
+- ✓ Legs lifting and placing naturally
+- ✓ Body staying upright and stable
+- ✓ Forward motion without falling
+- ✓ Coordinated leg movements
+
+If the gaits look wrong, there may be an issue with the kinematics conversion.
+
+### 2. Start with Recommended Workflow
 
 Always start with imitation pre-training:
 ```bash
@@ -325,14 +372,14 @@ python extract_sunfounder_demos.py --n-cycles 20
 python train_pretrain_finetune.py --sunfounder-demos demonstrations/sunfounder_demos.pkl
 ```
 
-### 2. Monitor Training
+### 3. Monitor Training
 
 Use visualization to catch problems early:
 ```bash
 --visualize-freq 50000  # Show progress every 50K steps
 ```
 
-### 3. Tune Hyperparameters
+### 4. Tune Hyperparameters
 
 If training is unstable:
 ```bash
@@ -341,14 +388,14 @@ If training is unstable:
 --total-bc-epochs 500   # More BC pre-training
 ```
 
-### 4. Use TensorBoard
+### 5. Use TensorBoard
 
 Monitor metrics during training:
 ```bash
 tensorboard --logdir outputs/experiment_name/logs
 ```
 
-### 5. Save Checkpoints Frequently
+### 6. Save Checkpoints Frequently
 
 ```bash
 --save-freq 5000  # Save every 5000 steps
