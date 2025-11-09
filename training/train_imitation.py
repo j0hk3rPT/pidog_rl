@@ -1,24 +1,41 @@
-"""Train PiDog using Imitation Learning (Behavioral Cloning and GAIL)."""
+"""Train PiDog using Imitation Learning (Behavioral Cloning and GAIL).
+
+NOTE: This script requires the 'imitation' package.
+Install with: pip install imitation
+"""
 
 import argparse
 import pickle
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
+import sys
 
 import gymnasium as gym
 import numpy as np
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv
-from imitation.algorithms import bc, gail
-from imitation.data import rollout
-from imitation.data.types import Transitions
-from imitation.rewards.reward_nets import BasicRewardNet
-from imitation.util.networks import RunningNorm
 import torch
 
+# Try to import imitation - it's optional
+try:
+    from imitation.algorithms import bc, gail
+    from imitation.data import rollout
+    from imitation.data.types import Transitions
+    from imitation.rewards.reward_nets import BasicRewardNet
+    from imitation.util.networks import RunningNorm
+    IMITATION_AVAILABLE = True
+except ImportError:
+    IMITATION_AVAILABLE = False
+    print("\n" + "="*60)
+    print("ERROR: 'imitation' package not installed")
+    print("="*60)
+    print("Install it with: pip install imitation")
+    print("Or: uv pip install imitation")
+    print("="*60 + "\n")
+    sys.exit(1)
+
 # Add parent directory to path for imports
-import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from pidog_env import PiDogEnv
