@@ -3,41 +3,21 @@ name = "pidog_rl"
 version = "0.1.0"
 description = "Reinforcement Learning and Imitation Learning for PiDog Quadruped Robot"
 readme = "README.md"
-requires-python = ">=3.11,<3.13"
+requires-python = ">=3.11"
 dependencies = [
-    # Core dependencies
-    "cvxpy>=1.6.6",
-    "cython>=3.1.2",
-    "gymnasium>=1.1.1",
-    "imageio>=2.37.0",
-    "mujoco>=3.3.3",
-    "obj2mjcf>=0.0.25",
-    "pyqt5>=5.15.11",
-    "scipy>=1.15.3",
+    # Core simulation
+    "mujoco",
+    "gymnasium",
 
-    # RL frameworks
-    "stable-baselines3>=2.6.0",
-    "tensorboard>=2.19.0",
+    # RL training
+    "stable-baselines3",
+    "tensorboard",
 
-    # JAX ecosystem for Brax
-    "jax[cuda12]>=0.4.35",
-    "jaxlib>=0.4.35",
-    "brax>=0.13.0",
-    "flax>=0.10.0",
-    "optax>=0.2.4",
-
-    # Imitation learning (latest stable version compatible with Python 3.11)
-    "imitation>=1.0.0,<2.0.0",
-
-    # Additional ML tools
-    "wandb>=0.18.7",
-    "matplotlib>=3.10.0",
-    "seaborn>=0.13.2",
-    "pandas>=2.2.3",
-    "tqdm>=4.67.1",
-    "pyyaml>=6.0.2",
-
-    # Video recording and visualization
-    "opencv-python>=4.10.0.84",
-    "pillow>=11.0.0",
+    # Utils
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "imageio",
+    "tqdm",
+    "pyyaml",
 ]
