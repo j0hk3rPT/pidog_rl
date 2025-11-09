@@ -260,7 +260,7 @@ def extract_gait(coords_list, gait_name="gait"):
     return all_actions
 
 
-def collect_demonstrations(actions_list, gait_name="gait", use_camera=False):
+def collect_demonstrations(actions_list, gait_name="gait", use_camera=False, repeat_frames=1):
     """Collect demonstrations by executing actions in environment."""
     env = PiDogEnv(use_camera=use_camera)
 
@@ -271,7 +271,13 @@ def collect_demonstrations(actions_list, gait_name="gait", use_camera=False):
 
     obs, _ = env.reset()
 
+    # Repeat each action frame
+    repeated_actions = []
     for action in actions_list:
+        for _ in range(repeat_frames):
+            repeated_actions.append(action)
+
+    for action in repeated_actions:
         if use_camera and isinstance(obs, dict):
             obs_vec = obs["vector"]
         else:
@@ -326,6 +332,8 @@ def main():
     parser.add_argument("--output-file", type=str, default=None)
     parser.add_argument("--n-cycles", type=int, default=5,
                        help="Number of cycles for walk gait")
+    parser.add_argument("--repeat-frames", type=int, default=1,
+                       help="Repeat each frame N times (useful for static poses)")
     parser.add_argument("--use-camera", action="store_true")
     args = parser.parse_args()
 
@@ -341,7 +349,7 @@ def main():
     actions = extract_gait(coords_list, gait_name=args.gait)
 
     # Collect demonstrations
-    demos = collect_demonstrations(actions, gait_name=args.gait, use_camera=args.use_camera)
+    demos = collect_demonstrations(actions, gait_name=args.gait, use_camera=args.use_camera, repeat_frames=args.repeat_frames)
 
     # Save
     output_path = Path(output_file)
