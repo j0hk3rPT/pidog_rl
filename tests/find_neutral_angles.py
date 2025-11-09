@@ -13,14 +13,31 @@ def test_angles(model, data, viewer, hip_angle, knee_angle, duration=2.0):
     """Test a specific angle combination."""
     print(f"\nTesting Hip={np.degrees(hip_angle):.0f}°, Knee={np.degrees(knee_angle):.0f}°")
 
-    # Set all legs to these angles
+    # FULL RESET - respawn the robot
+    # Reset all positions and velocities to zero
+    data.qpos[:] = 0.0
+    data.qvel[:] = 0.0
+
+    # Set body position (x, y, z)
+    data.qpos[0] = 0.0  # X position
+    data.qpos[1] = 0.0  # Y position
+    data.qpos[2] = 0.10  # Z position (height)
+
+    # Set body orientation (quaternion: w, x, y, z)
+    data.qpos[3] = 1.0  # w
+    data.qpos[4] = 0.0  # x
+    data.qpos[5] = 0.0  # y
+    data.qpos[6] = 0.0  # z
+
+    # Set all leg joints to test angles
     for i in range(4):
         data.qpos[7 + i*2] = hip_angle      # Hip
         data.qpos[7 + i*2 + 1] = knee_angle  # Knee
 
-    # Set body to reasonable height
-    data.qpos[2] = 0.10
+    # Reset control signals
+    data.ctrl[:] = 0.0
 
+    # Forward kinematics to update positions
     mujoco.mj_forward(model, data)
 
     # Run for duration
