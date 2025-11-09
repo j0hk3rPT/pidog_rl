@@ -26,6 +26,7 @@
                   ctrlrange="0 3.14159"
                   forcerange="-0.137 0.137"
                   kp="5.0"
+                  kv="2.5"
                   gear="1"/>
 
         <position name="back_right_knee_actuator"
@@ -33,6 +34,7 @@
                   ctrlrange="0 3.14159"
                   forcerange="-0.137 0.137"
                   kp="5.0"
+                  kv="2.5"
                   gear="1"/>
 
         <!-- Front Right Leg -->
@@ -41,6 +43,7 @@
                   ctrlrange="0 3.14159"
                   forcerange="-0.137 0.137"
                   kp="5.0"
+                  kv="2.5"
                   gear="1"/>
 
         <position name="front_right_knee_actuator"
@@ -48,6 +51,7 @@
                   ctrlrange="0 3.14159"
                   forcerange="-0.137 0.137"
                   kp="5.0"
+                  kv="2.5"
                   gear="1"/>
 
         <!-- Back Left Leg -->
@@ -56,6 +60,7 @@
                   ctrlrange="0 3.14159"
                   forcerange="-0.137 0.137"
                   kp="5.0"
+                  kv="2.5"
                   gear="1"/>
 
         <position name="back_left_knee_actuator"
@@ -63,6 +68,7 @@
                   ctrlrange="0 3.14159"
                   forcerange="-0.137 0.137"
                   kp="5.0"
+                  kv="2.5"
                   gear="1"/>
 
         <!-- Front Left Leg -->
@@ -71,6 +77,7 @@
                   ctrlrange="0 3.14159"
                   forcerange="-0.137 0.137"
                   kp="5.0"
+                  kv="2.5"
                   gear="1"/>
 
         <position name="front_left_knee_actuator"
@@ -78,6 +85,7 @@
                   ctrlrange="0 3.14159"
                   forcerange="-0.137 0.137"
                   kp="5.0"
+                  kv="2.5"
                   gear="1"/>
     </actuator>
 </mujoco>

@@ -23,6 +23,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from pidog_env import PiDogEnv
+from pidog_env.feature_extractors import PiDogCombinedExtractor, PiDogNatureCNNExtractor
 
 
 def parse_args():
@@ -113,13 +114,45 @@ def parse_args():
         default=None,
         help="Experiment name (default: auto-generated)",
     )
+    parser.add_argument(
+        "--use-camera",
+        action="store_true",
+        help="Use camera observations (requires MultiInputPolicy)",
+    )
+    parser.add_argument(
+        "--camera-width",
+        type=int,
+        default=84,
+        help="Camera image width (default: 84)",
+    )
+    parser.add_argument(
+        "--camera-height",
+        type=int,
+        default=84,
+        help="Camera image height (default: 84)",
+    )
+    parser.add_argument(
+        "--features-dim",
+        type=int,
+        default=256,
+        help="Feature extractor output dimension (default: 256)",
+    )
+    parser.add_argument(
+        "--use-nature-cnn",
+        action="store_true",
+        help="Use deeper Nature DQN architecture (slower but more powerful)",
+    )
     return parser.parse_args()
 
 
-def make_env(rank, seed=0):
+def make_env(rank, seed=0, use_camera=True, camera_width=84, camera_height=84):
     """Create a single environment instance."""
     def _init():
-        env = PiDogEnv()
+        env = PiDogEnv(
+            use_camera=use_camera,
+            camera_width=camera_width,
+            camera_height=camera_height
+        )
         env = Monitor(env)
         env.reset(seed=seed + rank)
         return env
@@ -128,8 +161,29 @@ def make_env(rank, seed=0):
 
 def create_algorithm(algorithm_name, env, args):
     """Create RL algorithm instance."""
+    # Select policy type based on camera usage
+    if args.use_camera:
+        policy_type = "MultiInputPolicy"
+        # Select feature extractor architecture
+        if args.use_nature_cnn:
+            extractor_class = PiDogNatureCNNExtractor
+            print("Using Nature DQN architecture (deeper CNN)")
+        else:
+            extractor_class = PiDogCombinedExtractor
+            print("Using standard combined CNN+MLP architecture")
+
+        policy_kwargs = {
+            "features_extractor_class": extractor_class,
+            "features_extractor_kwargs": {"features_dim": args.features_dim},
+        }
+    else:
+        policy_type = "MlpPolicy"
+        policy_kwargs = {}
+        print("Using MLP policy (vector observations only)")
+
     common_kwargs = {
         "env": env,
+        "policy_kwargs": policy_kwargs,
         "learning_rate": args.learning_rate,
         "verbose": 1,
         "device": args.device,
@@ -139,7 +193,7 @@ def create_algorithm(algorithm_name, env, args):
 
     if algorithm_name == "ppo":
         return PPO(
-            "MlpPolicy",
+            policy_type,
             n_steps=args.n_steps,
             batch_size=args.batch_size,
             n_epochs=10,
@@ -151,7 +205,7 @@ def create_algorithm(algorithm_name, env, args):
         )
     elif algorithm_name == "sac":
         return SAC(
-            "MlpPolicy",
+            policy_type,
             batch_size=args.batch_size,
             gamma=0.99,
             tau=0.005,
@@ -160,7 +214,7 @@ def create_algorithm(algorithm_name, env, args):
         )
     elif algorithm_name == "td3":
         return TD3(
-            "MlpPolicy",
+            policy_type,
             batch_size=args.batch_size,
             gamma=0.99,
             tau=0.005,
@@ -199,18 +253,30 @@ def main():
     print(f"Learning rate: {args.learning_rate}")
     print(f"Device: {args.device}")
     print(f"Seed: {args.seed}")
+    print(f"Camera enabled: {args.use_camera}")
+    if args.use_camera:
+        print(f"Camera resolution: {args.camera_width}x{args.camera_height}")
+        print(f"Feature dim: {args.features_dim}")
+        print(f"Architecture: {'Nature DQN' if args.use_nature_cnn else 'Standard CNN+MLP'}")
     print(f"Output directory: {experiment_dir}")
     print("=" * 60)
 
     # Create vectorized environments
     print(f"\nCreating {args.n_envs} parallel environments...")
     if args.n_envs > 1:
-        env = SubprocVecEnv([make_env(i, args.seed) for i in range(args.n_envs)])
+        env = SubprocVecEnv([
+            make_env(i, args.seed, args.use_camera, args.camera_width, args.camera_height)
+            for i in range(args.n_envs)
+        ])
     else:
-        env = DummyVecEnv([make_env(0, args.seed)])
+        env = DummyVecEnv([
+            make_env(0, args.seed, args.use_camera, args.camera_width, args.camera_height)
+        ])
 
     # Create evaluation environment
-    eval_env = DummyVecEnv([make_env(args.n_envs, args.seed)])
+    eval_env = DummyVecEnv([
+        make_env(args.n_envs, args.seed, args.use_camera, args.camera_width, args.camera_height)
+    ])
 
     # Create or load model
     if args.checkpoint is not None:
