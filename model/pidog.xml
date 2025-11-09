@@ -170,7 +170,7 @@
                 <geom name="back_left_leg_b_motor_v" mesh="motor" rgba="0.0 0.0 0.0 1" pos="0.01315 0.0096 0.0015" euler="0 3.1415 -1.57075" class="visual"/>
                 <geom name="back_left_leg_b_motor_sc" type="box" size="0.0075 0.016 0.016" rgba="1.0 0.0 0.0 0.175" pos="0.01315 0.0096 -0.006" euler="0 3.1415 -1.57075" class="self_collision"/>
 
-                <joint name="back_left_hip" type="hinge" axis="0 0 -1" pos="0.0069 0.0096 0.0" />
+                <joint name="back_left_hip" type="hinge" axis="0 0 1" pos="0.0069 0.0096 0.0" />
             
                 <body name="back_left_knee" pos="0.061 0.003 -0.0119" euler="0.0 0.0 1.57075" >
 
@@ -199,7 +199,7 @@
                     <geom type="cylinder" size="0.00325 0.0065" rgba="0.0 0.0 0.0 1" pos="0.0775 0.005 0.001" class="visual"/>
 
 
-                    <joint name="back_left_knee" type="hinge" axis="0 0 -1" pos="0.00815 0.0096 0.0"/>
+                    <joint name="back_left_knee" type="hinge" axis="0 0 1" pos="0.00815 0.0096 0.0"/>
                 </body>
             </body>
 
@@ -218,7 +218,7 @@
                 <geom name="front_left_leg_b_motor_v" mesh="motor" rgba="0.0 0.0 0.0 1" pos="0.01315 0.0096 0.0015" euler="0 3.1415 -1.57075" class="visual"/>
                 <geom name="front_left_leg_b_motor_sc" type="box" size="0.0075 0.016 0.016" rgba="1.0 0.0 0.0 0.175" pos="0.01315 0.0096 -0.006" euler="0 3.1415 -1.57075" class="self_collision"/>
 
-                <joint name="front_left_hip" type="hinge" axis="0 0 -1" pos="0.0069 0.0096 0.0" />
+                <joint name="front_left_hip" type="hinge" axis="0 0 1" pos="0.0069 0.0096 0.0" />
             
                 <body name="front_left_knee" pos="0.061 0.003 -0.0119" euler="0.0 0.0 1.57075" >
 
@@ -247,7 +247,7 @@
                     <geom type="cylinder" size="0.00325 0.0065" rgba="0.0 0.0 0.0 1" pos="0.0775 0.005 0.001" class="visual"/>
 
 
-                    <joint name="front_left_knee" type="hinge" axis="0 0 -1" pos="0.00815 0.0096 0.0"/>
+                    <joint name="front_left_knee" type="hinge" axis="0 0 1" pos="0.00815 0.0096 0.0"/>
                 </body>
             </body>
             
