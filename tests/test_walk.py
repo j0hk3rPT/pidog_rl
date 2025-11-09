@@ -33,9 +33,9 @@ def trotting_gait(t, amplitude=0.6, frequency=1.5):
     """
     phase = 2 * np.pi * frequency * t
 
-    # Neutral positions - adjusted for proper standing
-    hip_neutral = np.pi / 2   # 90° for hips
-    knee_neutral = np.pi / 4  # 45° for knees (more extended than 90°)
+    # Neutral positions - found by systematic search
+    hip_neutral = -np.pi / 6   # -30° for hips
+    knee_neutral = -np.pi / 4  # -45° for knees
 
     # Hip and knee offsets for walking
     hip_offset = amplitude * np.sin(phase)
@@ -82,8 +82,8 @@ def walking_gait(t, amplitude=0.5, frequency=1.0):
         Array of 8 joint positions
     """
     phase = 2 * np.pi * frequency * t
-    hip_neutral = np.pi / 2   # 90° for hips
-    knee_neutral = np.pi / 4  # 45° for knees (more extended)
+    hip_neutral = -np.pi / 6   # -30° for hips
+    knee_neutral = -np.pi / 4  # -45° for knees
 
     # Create phase offsets for each leg (sequential)
     phases = [
@@ -136,9 +136,9 @@ def main():
     # Set body height
     data.qpos[2] = 0.15  # Height of base
 
-    # Set all joints to neutral positions
-    hip_neutral = np.pi / 2   # 90° for hips
-    knee_neutral = np.pi / 4  # 45° for knees
+    # Set all joints to neutral positions - found by systematic search
+    hip_neutral = -np.pi / 6   # -30° for hips
+    knee_neutral = -np.pi / 4  # -45° for knees
 
     # Set hip joints (every other joint starting at 7)
     for i in range(7, 15, 2):  # Hip joints: 7, 9, 11, 13

@@ -43,9 +43,9 @@ def calculate_leg_angles(y_offset, z_height, is_stepping):
     Returns:
         (hip_angle, knee_angle) in radians
     """
-    # Neutral standing angles (observed to work at 45° knee)
-    hip_neutral = np.pi / 2      # 90°
-    knee_neutral = np.pi / 4     # 45° - more extended
+    # Neutral standing angles (found by systematic search)
+    hip_neutral = -np.pi / 6     # -30°
+    knee_neutral = -np.pi / 4    # -45°
 
     # Map y_offset to hip angle change
     # Forward movement rotates hip backward, backward movement rotates hip forward
@@ -145,9 +145,9 @@ def main():
     # Initialize at standing position
     data.qpos[2] = 0.15  # Initial height
 
-    # Neutral standing angles
-    hip_neutral = np.pi / 2   # 90°
-    knee_neutral = np.pi / 4  # 45°
+    # Neutral standing angles (found by systematic search)
+    hip_neutral = -np.pi / 6   # -30°
+    knee_neutral = -np.pi / 4  # -45°
 
     print(f"\nNeutral angles:")
     print(f"  Hip: {np.degrees(hip_neutral):.1f}°")
