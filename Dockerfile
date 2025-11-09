@@ -1,5 +1,5 @@
-# Use ROCm PyTorch as base image
-FROM rocm/pytorch:latest
+# Use ROCm JAX as base image (includes Python 3.12 and ROCm support)
+FROM rocm/jax:latest
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive \
