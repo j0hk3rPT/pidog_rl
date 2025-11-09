@@ -80,19 +80,20 @@ def main():
     print(f"\nTesting different angle combinations...")
     print(f"Looking for stable standing height > 0.05m\n")
 
-    # Test different combinations - EXPANDED SEARCH
-    # Hip range: 0° to 180°
-    # Knee range: 0° to 180°
+    # Test different combinations - EXPANDED SEARCH INCLUDING NEGATIVE ANGLES
+    # Hip range: -90° to 180°
+    # Knee range: -90° to 180°
 
     test_cases = []
 
     # Test all combinations systematically
-    print("Testing Hip angles: 0° to 180° in 15° steps")
-    print("Testing Knee angles: 0° to 180° in 15° steps")
+    print("Testing Hip angles: -90° to 180° in 15° steps")
+    print("Testing Knee angles: -90° to 180° in 15° steps")
+    print("(Negative angles may be needed for proper joint orientation)")
     print()
 
-    for hip_deg in range(0, 181, 15):
-        for knee_deg in range(0, 181, 15):
+    for hip_deg in range(-90, 181, 15):
+        for knee_deg in range(-90, 181, 15):
             test_cases.append((hip_deg, knee_deg))
 
     print(f"Total test cases: {len(test_cases)}")
