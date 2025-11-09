@@ -117,32 +117,30 @@ def test_standing_position(standing_height=80, mirror_right=True):
 
     # Test in environment
     print("Testing in MuJoCo environment...")
-    print("This should show robot in neutral standing position.")
-    print("Press Ctrl+C to exit.\n")
+    print("Applying action for 10 seconds (no visualization in Docker)...\n")
 
     env = PiDogEnv(use_camera=False)
     obs, _ = env.reset()
 
     action = np.array(normalized_action, dtype=np.float32)
 
-    with mujoco.viewer.launch_passive(env.model, env.data) as viewer:
-        step_count = 0
-        while viewer.is_running() and step_count < 300:  # 10 seconds at 30 FPS
-            obs, reward, terminated, truncated, info = env.step(action)
+    step_count = 0
+    fell = False
+    for step_count in range(300):  # 10 seconds at 30 FPS
+        obs, reward, terminated, truncated, info = env.step(action)
 
-            viewer.sync()
-            time.sleep(1.0 / 30)  # 30 FPS
+        if step_count % 30 == 0:  # Every second
+            print(f"  Step {step_count}: height={info['body_height']:.3f}m, velocity={info['forward_velocity']:.3f}m/s, reward={reward:.2f}")
 
-            if step_count % 30 == 0:  # Every second
-                print(f"  Step {step_count}: height={info['body_height']:.3f}m, velocity={info['forward_velocity']:.3f}m/s")
-
-            step_count += 1
-
-            if terminated:
-                print("  Robot fell!")
-                break
+        if terminated:
+            print(f"  Robot fell at step {step_count}!")
+            fell = True
+            break
 
     env.close()
+
+    if not fell:
+        print(f"  ✓ Robot stayed standing for {step_count} steps!")
 
     print("\n" + "="*70)
     print(" TEST COMPLETE")
