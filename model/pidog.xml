@@ -1,0 +1,345 @@
+<!--
+  Robot Model: PiDog (Original hardware/product by [Company Name])
+  Description: MuJoCo XML model used for simulation and research purposes.
+  Author of this model file: Joel Baptista (independent user, no affiliation with the original creators)
+  Created: August 2025
+  License: For personal or academic use only, depending on original asset terms.
+
+  Notes:
+  - Based on physical dimensions and visual approximation of the PiDog robot.
+  - This model is unofficial and not endorsed by the original manufacturer.
+  - Tuned and tested with MuJoCo 3.x.
+
+  Repository: https://github.com/yourusername/pidog-mujoco (example)
+-->
+
+
+
+<mujoco>
+    <worldbody>
+        <light directional='false' diffuse='.7 .7 .7' specular='0.03 0.03 0.03' pos='-1 -1.0 4.0' dir='1 1.0 -4'/>
+        <geom name='ground' size="1.5 1.5 0.25" type="plane" contype="1" conaffinity="1" material="MatPlane" pos="0 0 0" rgba="0.8 0.9 0.8 1" class="collision"/>
+        <geom size="1.5 1.5 0.25" type="plane" material="MatPlane" pos="0 0 0" rgba="0.8 0.9 0.8 1" class="visual"/>
+        <camera name="fixed" pos="0 -0.7 0.7" quat="0.92388 0.382683 0 0" />
+        <camera name="vil_camera" pos="0 -1.2 1.2" quat="0.92388 0.382683 0 0" />
+
+        <geom name="x_axis" type="box" size="5 0.005 0.005" rgba="1.0 0.0 0.0 1.0" pos="5.0 0.0 0.0" class="visual"/>
+
+    
+        <body name="base" pos="0 0 0.1" euler="0.0 0.0 -1.57075">
+
+            <geom name="eletronics_c0" mass="0.020" type="box" size="0.035 0.035 0.015" pos="0.03 0.07 0.05" class="collision"/>
+            <geom name="eletronics_v" mesh="eletronics" class="visual"/>
+
+            <geom name="torso_left_c0" mass="0.0116" mesh="torso_left_c0" class="collision"/>
+            <geom name="torso_left_c1" mass="0.0116" mesh="torso_left_c1" class="collision"/>
+            <geom name="torso_left_c2" mass="0.0116" mesh="torso_left_c2" class="collision"/>
+            <geom name="torso_left_v" mesh="torso_left" class="visual"/>
+
+            <geom name="torso_right_c0" mass="0.0116" mesh="torso_right_c0" class="collision"/>
+            <geom name="torso_right_c1" mass="0.0116" mesh="torso_right_c1" class="collision"/>
+            <geom name="torso_right_c2" mass="0.0116" mesh="torso_right_c2" class="collision"/>
+            <geom name="torso_right_v" mesh="torso_right" class="visual"/>
+    
+            <geom name="back_c0" mass="0.004678" mesh="back_c0" class="collision"/>
+            <geom name="back_c1" mass="0.004678" mesh="back_c1" class="collision"/>
+            <geom name="back_c2" mass="0.004678" mesh="back_c2" class="collision"/>
+            <geom name="back_c3" mass="0.004678" mesh="back_c3" class="collision"/>
+            <geom name="back_c4" mass="0.004678" mesh="back_c4" class="collision"/>
+            <geom name="back_c5" mass="0.004678" mesh="back_c5" class="collision"/>
+            <geom name="back_c6" mass="0.004678" mesh="back_c6" class="collision"/>
+            <geom name="back_v" mesh="back" class="visual"/>
+        
+            <geom name="chest_c0" mass="0.00354" mesh="chest_c0" class="collision"/>
+            <geom name="chest_c1" mass="0.00354" mesh="chest_c1" class="collision"/>
+            <geom name="chest_c2" mass="0.00354" mesh="chest_c2" class="collision"/>
+            <geom name="chest_v" mesh="chest" class="visual"/>
+
+            <site name="center" pos="0.03 0.06 0.0" size="0.007" rgba="0 1 0 0.125" />
+
+            <!-- IMU sensor mounting site (center of body, electronics compartment) -->
+            <site name="imu_site" pos="0.03 0.06 0.0" size="0.005" rgba="0 0 1 0.3" />
+
+            <joint class="free"/>
+
+            <!-- back rigth leg -->
+            <body name="back_right_hip" pos="0.072 -0.005 0.01" euler="0.0 1.57075 0.0">
+
+                <geom name="back_right_leg_b_c0" mass="0.00414" mesh="leg_b_c0" class="collision"/>
+                <geom name="back_right_leg_b_c1" mass="0.00414" mesh="leg_b_c1" class="collision"/>
+                <geom name="back_right_leg_b_v" mesh="leg_b" class="visual"/>
+                <geom name="back_right_leg_b_sc" type="box" size="0.0355 0.012 0.003" rgba="1.0 0.0 0.0 0.175" pos="0.02575 0.012 0.0" class="self_collision"/>
+
+                <geom name="back_right_leg_b_motor_c0" mass="0.00225" mesh="motor_c0" pos="0.01315 0.0096 0.0" euler="0 0 1.57075" class="collision"/>
+                <geom name="back_right_leg_b_motor_c1" mass="0.00225" mesh="motor_c1" pos="0.01315 0.0096 0.0" euler="0 0 1.57075" class="collision"/>
+                <geom name="back_right_leg_b_motor_c2" mass="0.00225" mesh="motor_c2" pos="0.01315 0.0096 0.0" euler="0 0 1.57075" class="collision"/>
+                <geom name="back_right_leg_b_motor_c3" mass="0.00225" mesh="motor_c3" pos="0.01315 0.0096 0.0" euler="0 0 1.57075" class="collision"/>
+                <geom name="back_right_leg_b_motor_v" mesh="motor" rgba="0.0 0.0 0.0 1" pos="0.01315 0.0096 0.0" euler="0 0 1.57075" class="visual"/>
+                <geom name="back_right_leg_b_motor_sc" type="box" size="0.0075 0.016 0.016" rgba="1.0 0.0 0.0 0.175" pos="0.01315 0.0096 0.006" euler="0 0 1.57075" class="self_collision"/>
+
+                <joint name="back_right_hip" type="hinge" axis="0 0 1" pos="0.0069 0.0096 0.0" damping="0.05" />
+            
+                <body name="back_right_knee" pos="0.061 0.003 0.0119" euler="0.0 0.0 1.57075" >
+
+                    <geom name="back_right_leg_a_c0" mass="0.00730" mesh="leg_a_c0" class="collision"/>
+                    <geom name="back_right_leg_a_v" mesh="leg_a" class="visual"/>
+                    <geom name="back_right_leg_a_sc" type="box" size="0.047 0.010 0.006" rgba="1.0 0.0 0.0 0.175" pos="0.037 0.010 0.0" class="self_collision"/>
+
+
+                    <geom name="back_right_leg_a_motor_c0" mass="0.00225" mesh="motor_c0" pos="0.01315 0.0096 0.0015" euler="0 0 1.57075" class="collision"/>
+                    <geom name="back_right_leg_a_motor_c1" mass="0.00225" mesh="motor_c1" pos="0.01315 0.0096 0.0015" euler="0 0 1.57075" class="collision"/>
+                    <geom name="back_right_leg_a_motor_c2" mass="0.00225" mesh="motor_c2" pos="0.01315 0.0096 0.0015" euler="0 0 1.57075" class="collision"/>
+                    <geom name="back_right_leg_a_motor_c3" mass="0.00225" mesh="motor_c3" pos="0.01315 0.0096 0.0015" euler="0 0 1.57075" class="collision"/>
+                    <geom name="back_right_leg_a_motor_v" mesh="motor" rgba="0.0 0.0 0.0 1" pos="0.01315 0.0096 0.0015" euler="0 0 1.57075" class="visual"/>
+                    <geom name="back_right_leg_a_motor_sc" type="box" size="0.0075 0.016 0.016" rgba="1.0 0.0 0.0 0.175" pos="0.01315 0.0096 0.006" euler="0 0 1.57075" class="self_collision"/>
+
+
+                    <geom name="back_right_acrylic_r_c0" mass="0.00158" mesh="acrylic_c0" rgba="0.0 0.0 0.0 1" pos="0.0 0.0 0.0" class="collision"/>
+                    <geom name="back_right_acrylic_r_v" mesh="acrylic" rgba="1.0 1.0 1.0 0.3" pos="0.0 0.0 0.0" class="visual"/>
+
+                    <geom name="back_right_acrylic_l_c0" mass="0.00158" mesh="acrylic" rgba="0.0 0.0 0.0 1" pos="0.0 0.0 -0.005" class="collision"/>
+                    <geom name="back_right_acrylic_l_v" mesh="acrylic" rgba="1.0 1.0 1.0 0.3" pos="0.0 0.0 -0.005" class="visual"/>
+
+
+                    <!-- rivet -->
+                    <geom type="cylinder" size="0.00325 0.0065" rgba="0.0 0.0 0.0 1" pos="0.063 0.008 0.001" class="visual"/>
+                    <geom type="cylinder" size="0.00325 0.0065" rgba="0.0 0.0 0.0 1" pos="0.0775 0.005 0.001" class="visual"/>
+
+
+                    <joint name="back_right_knee" type="hinge" axis="0 0 1" pos="0.00815 0.0096 0.0" damping="0.05"/>
+                </body>
+            </body>
+
+            <!-- front right leg -->
+            <body name="front_right_hip" pos="0.072 0.09 0.01" euler="0.0 1.57075 0.0">
+
+                <geom name="front_right_leg_b_c0" mass="0.00414" mesh="leg_b_c0" class="collision"/>
+                <geom name="front_right_leg_b_c1" mass="0.00414" mesh="leg_b_c1" class="collision"/>
+                <geom name="front_right_leg_b_v" mesh="leg_b" class="visual"/>
+                <geom name="front_right_leg_b_sc" type="box" size="0.0355 0.012 0.003" rgba="1.0 0.0 0.0 0.175" pos="0.02575 0.012 0.0" class="self_collision"/>
+
+                <geom name="front_right_leg_b_motor_c0" mass="0.00225" mesh="motor_c0" pos="0.01315 0.0096 0.0" euler="0 0 1.57075" class="collision"/>
+                <geom name="front_right_leg_b_motor_c1" mass="0.00225" mesh="motor_c1" pos="0.01315 0.0096 0.0" euler="0 0 1.57075" class="collision"/>
+                <geom name="front_right_leg_b_motor_c2" mass="0.00225" mesh="motor_c2" pos="0.01315 0.0096 0.0" euler="0 0 1.57075" class="collision"/>
+                <geom name="front_right_leg_b_motor_c3" mass="0.00225" mesh="motor_c3" pos="0.01315 0.0096 0.0" euler="0 0 1.57075" class="collision"/>
+                <geom name="front_right_leg_b_motor_v" mesh="motor" rgba="0.0 0.0 0.0 1" pos="0.01315 0.0096 0.0" euler="0 0 1.57075" class="visual"/>
+                <geom name="front_right_leg_b_motor_sc" type="box" size="0.0075 0.016 0.016" rgba="1.0 0.0 0.0 0.175" pos="0.01315 0.0096 0.006" euler="0 0 1.57075" class="self_collision"/>
+
+                <joint name="front_right_hip" type="hinge" axis="0 0 1" pos="0.0069 0.0096 0.0" damping="0.05" />
+            
+                <body name="front_right_knee" pos="0.061 0.003 0.0119" euler="0.0 0.0 1.57075" >
+
+                    <geom name="front_right_leg_a_c0" mass="0.00730" mesh="leg_a_c0" class="collision"/>
+                    <geom name="front_right_leg_a_v" mass="0.00730" mesh="leg_a" class="visual"/>
+                    <geom name="front_right_leg_a_sc" type="box" size="0.047 0.010 0.006" rgba="1.0 0.0 0.0 0.175" pos="0.037 0.010 0.0" class="self_collision"/>
+
+
+                    <geom name="front_right_leg_a_motor_c0" mass="0.00225" mesh="motor_c0" pos="0.01315 0.0096 0.0015" euler="0 0 1.57075" class="collision"/>
+                    <geom name="front_right_leg_a_motor_c1" mass="0.00225" mesh="motor_c1" pos="0.01315 0.0096 0.0015" euler="0 0 1.57075" class="collision"/>
+                    <geom name="front_right_leg_a_motor_c2" mass="0.00225" mesh="motor_c2" pos="0.01315 0.0096 0.0015" euler="0 0 1.57075" class="collision"/>
+                    <geom name="front_right_leg_a_motor_c3" mass="0.00225" mesh="motor_c3" pos="0.01315 0.0096 0.0015" euler="0 0 1.57075" class="collision"/>
+                    <geom name="front_right_leg_a_motor_v" mesh="motor" rgba="0.0 0.0 0.0 1" pos="0.01315 0.0096 0.0015" euler="0 0 1.57075" class="visual"/>
+                    <geom name="front_right_leg_a_motor_sc" type="box" size="0.0075 0.016 0.016" rgba="1.0 0.0 0.0 0.175" pos="0.01315 0.0096 0.006" euler="0 0 1.57075" class="self_collision"/>
+
+                    <geom name="front_right_acrylic_r_c0" mass="0.00158" mesh="acrylic_c0" rgba="0.0 0.0 0.0 1" pos="0.0 0.0 0.0" class="collision"/>
+                    <geom name="front_right_acrylic_r_v" mesh="acrylic" rgba="1.0 1.0 1.0 0.3" pos="0.0 0.0 0.0" class="visual"/>
+
+                    <geom name="front_right_acrylic_l_c0" mass="0.00158" mesh="acrylic" rgba="0.0 0.0 0.0 1" pos="0.0 0.0 -0.005" class="collision"/>
+                    <geom name="front_right_acrylic_l_v" mesh="acrylic" rgba="1.0 1.0 1.0 0.3" pos="0.0 0.0 -0.005" class="visual"/>
+
+
+                    <!-- rivet -->
+                    <geom type="cylinder" size="0.00325 0.0065" rgba="0.0 0.0 0.0 1" pos="0.063 0.008 0.001" class="visual"/>
+                    <geom type="cylinder" size="0.00325 0.0065" rgba="0.0 0.0 0.0 1" pos="0.0775 0.005 0.001" class="visual"/>
+
+
+                    <joint name="front_right_knee" type="hinge" axis="0 0 1" pos="0.00815 0.0096 0.0" damping="0.05"/>
+                </body>
+            </body>
+
+            <!-- back left leg -->
+            <body name="back_left_hip" pos="-0.012 -0.005 0.01" euler="0.0 1.57075 0.0">
+
+                <geom name="back_left_leg_b_c0" mass="0.00414" mesh="leg_b_c0" class="collision"/>
+                <geom name="back_left_leg_b_c1" mass="0.00414" mesh="leg_b_c1" class="collision"/>
+                <geom name="back_left_leg_b_v" mesh="leg_b" class="visual"/>
+                <geom name="back_left_leg_b_sc" type="box" size="0.0355 0.012 0.003" rgba="1.0 0.0 0.0 0.175" pos="0.02575 0.012 0.0" class="self_collision"/>
+
+                <geom name="back_left_leg_b_motor_c0" mass="0.00225" mesh="motor_c0" pos="0.01315 0.0096 0.0015" euler="0 3.1415 -1.57075" class="collision"/>
+                <geom name="back_left_leg_b_motor_c1" mass="0.00225" mesh="motor_c1" pos="0.01315 0.0096 0.0015" euler="0 3.1415 -1.57075" class="collision"/>
+                <geom name="back_left_leg_b_motor_c2" mass="0.00225" mesh="motor_c2" pos="0.01315 0.0096 0.0015" euler="0 3.1415 -1.57075" class="collision"/>
+                <geom name="back_left_leg_b_motor_c3" mass="0.00225" mesh="motor_c3" pos="0.01315 0.0096 0.0015" euler="0 3.1415 -1.57075" class="collision"/>
+                <geom name="back_left_leg_b_motor_v" mesh="motor" rgba="0.0 0.0 0.0 1" pos="0.01315 0.0096 0.0015" euler="0 3.1415 -1.57075" class="visual"/>
+                <geom name="back_left_leg_b_motor_sc" type="box" size="0.0075 0.016 0.016" rgba="1.0 0.0 0.0 0.175" pos="0.01315 0.0096 -0.006" euler="0 3.1415 -1.57075" class="self_collision"/>
+
+                <joint name="back_left_hip" type="hinge" axis="0 0 1" pos="0.0069 0.0096 0.0" damping="0.05" />
+            
+                <body name="back_left_knee" pos="0.061 0.003 -0.0119" euler="0.0 0.0 1.57075" >
+
+                    <geom name="back_left_leg_a_c0" mass="0.00730" mesh="leg_a_c0" class="collision"/>
+                    <geom name="back_left_leg_a_v" mass="0.00730" mesh="leg_a" class="visual"/>
+                    <geom name="back_left_leg_a_sc" type="box" size="0.047 0.010 0.006" rgba="1.0 0.0 0.0 0.175" pos="0.037 0.010 0.0" class="self_collision"/>
+
+
+                    <geom name="back_left_leg_a_motor_c0" mass="0.00225" mesh="motor_c0" pos="0.01315 0.0096 0.0015" euler="0 3.1415 -1.57075" class="collision"/>
+                    <geom name="back_left_leg_a_motor_c1" mass="0.00225" mesh="motor_c1" pos="0.01315 0.0096 0.0015" euler="0 3.1415 -1.57075" class="collision"/>
+                    <geom name="back_left_leg_a_motor_c2" mass="0.00225" mesh="motor_c2" pos="0.01315 0.0096 0.0015" euler="0 3.1415 -1.57075" class="collision"/>
+                    <geom name="back_left_leg_a_motor_c3" mass="0.00225" mesh="motor_c3" pos="0.01315 0.0096 0.0015" euler="0 3.1415 -1.57075" class="collision"/>
+                    <geom name="back_left_leg_a_motor_v" mesh="motor" rgba="0.0 0.0 0.0 1" pos="0.01315 0.0096 0.0015" euler="0 3.1415 -1.57075" class="visual"/>
+                    <geom name="back_left_leg_a_motor_sc" type="box" size="0.0075 0.016 0.016" rgba="1.0 0.0 0.0 0.175" pos="0.01315 0.0096 -0.006" euler="0 3.1415 -1.57075" class="self_collision"/>
+
+
+                    <geom name="back_left_acrylic_r_c0" mass="0.00158" mesh="acrylic_c0" rgba="0.0 0.0 0.0 1" pos="0.0 0.0 0.0" class="collision"/>
+                    <geom name="back_left_acrylic_r_v" mesh="acrylic" rgba="1.0 1.0 1.0 0.3" pos="0.0 0.0 0.0" class="visual"/>
+
+                    <geom name="back_left_acrylic_l_c0" mass="0.00158" mesh="acrylic" rgba="0.0 0.0 0.0 1" pos="0.0 0.0 -0.005" class="collision"/>
+                    <geom name="back_left_acrylic_l_v" mesh="acrylic" rgba="1.0 1.0 1.0 0.3" pos="0.0 0.0 -0.005" class="visual"/>
+
+
+                    <!-- rivet -->
+                    <geom type="cylinder" size="0.00325 0.0065" rgba="0.0 0.0 0.0 1" pos="0.063 0.008 0.001" class="visual"/>
+                    <geom type="cylinder" size="0.00325 0.0065" rgba="0.0 0.0 0.0 1" pos="0.0775 0.005 0.001" class="visual"/>
+
+
+                    <joint name="back_left_knee" type="hinge" axis="0 0 1" pos="0.00815 0.0096 0.0" damping="0.05"/>
+                </body>
+            </body>
+
+            <!-- front left leg -->
+            <body name="front_left_hip" pos="-0.012 0.09 0.01" euler="0.0 1.57075 0.0">
+
+                <geom name="front_left_leg_b_c0" mass="0.00414" mesh="leg_b_c0" class="collision"/>
+                <geom name="front_left_leg_b_c1" mass="0.00414" mesh="leg_b_c1" class="collision"/>
+                <geom name="front_left_leg_b_v" mesh="leg_b" class="visual"/>
+                <geom name="front_left_leg_b_sc" type="box" size="0.0355 0.012 0.003" rgba="1.0 0.0 0.0 0.175" pos="0.02575 0.012 0.0" class="self_collision"/>
+
+                <geom name="front_left_leg_b_motor_c0" mass="0.00225" mesh="motor_c0" pos="0.01315 0.0096 0.0015" euler="0 3.1415 -1.57075" class="collision"/>
+                <geom name="front_left_leg_b_motor_c1" mass="0.00225" mesh="motor_c1" pos="0.01315 0.0096 0.0015" euler="0 3.1415 -1.57075" class="collision"/>
+                <geom name="front_left_leg_b_motor_c2" mass="0.00225" mesh="motor_c2" pos="0.01315 0.0096 0.0015" euler="0 3.1415 -1.57075" class="collision"/>
+                <geom name="front_left_leg_b_motor_c3" mass="0.00225" mesh="motor_c3" pos="0.01315 0.0096 0.0015" euler="0 3.1415 -1.57075" class="collision"/>
+                <geom name="front_left_leg_b_motor_v" mesh="motor" rgba="0.0 0.0 0.0 1" pos="0.01315 0.0096 0.0015" euler="0 3.1415 -1.57075" class="visual"/>
+                <geom name="front_left_leg_b_motor_sc" type="box" size="0.0075 0.016 0.016" rgba="1.0 0.0 0.0 0.175" pos="0.01315 0.0096 -0.006" euler="0 3.1415 -1.57075" class="self_collision"/>
+
+                <joint name="front_left_hip" type="hinge" axis="0 0 1" pos="0.0069 0.0096 0.0" damping="0.05" />
+            
+                <body name="front_left_knee" pos="0.061 0.003 -0.0119" euler="0.0 0.0 1.57075" >
+
+                    <geom name="front_left_leg_a_c0" mass="0.00730" mesh="leg_a_c0" class="collision"/>
+                    <geom name="front_left_leg_a_v" mass="0.00730" mesh="leg_a" class="visual"/>
+                    <geom name="front_left_leg_a_sc" type="box" size="0.047 0.010 0.006" rgba="1.0 0.0 0.0 0.175" pos="0.037 0.010 0.0" class="self_collision"/>
+
+
+                    <geom name="front_left_leg_a_motor_c0" mass="0.00225" mesh="motor_c0" pos="0.01315 0.0096 0.0015" euler="0 3.1415 -1.57075" class="collision"/>
+                    <geom name="front_left_leg_a_motor_c1" mass="0.00225" mesh="motor_c1" pos="0.01315 0.0096 0.0015" euler="0 3.1415 -1.57075" class="collision"/>
+                    <geom name="front_left_leg_a_motor_c2" mass="0.00225" mesh="motor_c2" pos="0.01315 0.0096 0.0015" euler="0 3.1415 -1.57075" class="collision"/>
+                    <geom name="front_left_leg_a_motor_c3" mass="0.00225" mesh="motor_c3" pos="0.01315 0.0096 0.0015" euler="0 3.1415 -1.57075" class="collision"/>
+                    <geom name="front_left_leg_a_motor_v" mesh="motor" rgba="0.0 0.0 0.0 1" pos="0.01315 0.0096 0.0015" euler="0 3.1415 -1.57075" class="visual"/>
+                    <geom name="front_left_leg_a_motor_sc" type="box" size="0.0075 0.016 0.016" rgba="1.0 0.0 0.0 0.175" pos="0.01315 0.0096 -0.006" euler="0 3.1415 -1.57075" class="self_collision"/>
+
+
+                    <geom name="front_left_acrylic_r_c0" mass="0.00158" mesh="acrylic_c0" rgba="0.0 0.0 0.0 1" pos="0.0 0.0 0.0" class="collision"/>
+                    <geom name="front_left_acrylic_r_v" mesh="acrylic" rgba="1.0 1.0 1.0 0.3" pos="0.0 0.0 0.0" class="visual"/>
+
+                    <geom name="front_left_acrylic_l_c0" mass="0.00158" mesh="acrylic" rgba="0.0 0.0 0.0 1" pos="0.0 0.0 -0.005" class="collision"/>
+                    <geom name="front_left_acrylic_l_v" mesh="acrylic" rgba="1.0 1.0 1.0 0.3" pos="0.0 0.0 -0.005" class="visual"/>
+
+
+                    <!-- rivet -->
+                    <geom type="cylinder" size="0.00325 0.0065" rgba="0.0 0.0 0.0 1" pos="0.063 0.008 0.001" class="visual"/>
+                    <geom type="cylinder" size="0.00325 0.0065" rgba="0.0 0.0 0.0 1" pos="0.0775 0.005 0.001" class="visual"/>
+
+
+                    <joint name="front_left_knee" type="hinge" axis="0 0 1" pos="0.00815 0.0096 0.0" damping="0.05"/>
+                </body>
+            </body>
+            
+            <body name="neck1" pos="0.028 0.135 0.026" euler="0 1.57075 0.785375">
+                
+                <geom name="neck1_c0" mass="0.004678" mesh="neck1_c0" class="collision"/>
+                <geom name="neck1_c1" mass="0.004678" mesh="neck1_c1" class="collision"/>
+                <geom name="neck1_c2" mass="0.004678" mesh="neck1_c2" class="collision"/>
+                <geom name="neck1_c3" mass="0.004678" mesh="neck1_c3" class="collision"/>
+                <geom name="neck1_c4" mass="0.004678" mesh="neck1_c4" class="collision"/>
+                <geom name="neck1_c5" mass="0.004678" mesh="neck1_c5" class="collision"/>
+                <geom name="neck1_v"  mesh="neck1" class="visual"/>
+
+                <body name="neck2" pos="0.0 0.0175 0.0025" euler="0.0 1.57075 0.0">
+                
+                    <geom name="neck2_c0" mass="0.004678" mesh="neck2_c0" class="collision"/>
+                    <geom name="neck2_c1" mass="0.004678" mesh="neck2_c1" class="collision"/>
+                    <geom name="neck2_c2" mass="0.004678" mesh="neck2_c2" class="collision"/>
+                    <geom name="neck2_c3" mass="0.004678" mesh="neck2_c3" class="collision"/>
+                    <geom name="neck2_c4" mass="0.004678" mesh="neck2_c4" class="collision"/>
+                    <geom name="neck2_c5" mass="0.004678" mesh="neck2_c5" class="collision"/>
+                    <geom name="neck2_c6" mass="0.004678" mesh="neck2_c5" class="collision"/>
+                    <geom name="neck2_v"  mesh="neck2" class="visual" pos="0 0.0 0.0" euler="-0.785375 0 0"/>
+                    
+
+                    <body name="neck3" pos="0.0015 0.0115 -0.0075" euler="-0.785375 0 0.0">
+                
+                        <geom name="neck3_c0" mass="0.004678" mesh="neck3_c0" class="collision"/>
+                        <geom name="neck3_c1" mass="0.004678" mesh="neck3_c1" class="collision"/>
+                        <geom name="neck3_c2" mass="0.004678" mesh="neck3_c2" class="collision"/>
+                        <geom name="neck3_v"  mesh="neck3" class="visual" pos="0 0.0 0.0" euler="0 0 0"/>
+        
+                            
+                        <body name="head" pos="0.0 0.0375 0.005" euler="0.0 0 0.0">
+
+                            <geom name="head_c0" mass="0.004678" mesh="head_c0" class="collision"/>
+                            <geom name="head_c1" mass="0.004678" mesh="head_c1" class="collision"/>
+                            <geom name="head_c2" mass="0.004678" mesh="head_c2" class="collision"/>
+                            <geom name="head_c3" mass="0.004678" mesh="head_c3" class="collision"/>
+                            <geom name="head_c4" mass="0.004678" mesh="head_c4" class="collision"/>
+                            <geom name="head_c5" mass="0.004678" mesh="head_c5" class="collision"/>
+                            <geom name="head_c6" mass="0.004678" mesh="head_c6" class="collision"/>
+                            <geom name="head_v"  mesh="head" class="visual" pos="0 0.0 0.0" euler="0 0 0"/>
+
+                            <!-- Front-facing camera (OV5647 specs: ~62° HFOV, 49° VFOV) -->
+                            <!-- Mounted in nose area, facing forward -->
+                            <camera name="pidog_camera"
+                                    pos="0.0 0.045 0.01"
+                                    euler="0 0 0"
+                                    fovy="49"
+                                    mode="fixed"/>
+
+                            <!-- Ultrasonic sensor mounting site (above nose, facing forward) -->
+                            <site name="ultrasonic_site"
+                                  pos="0.0 0.04 0.015"
+                                  euler="0 0 0"
+                                  size="0.005"
+                                  rgba="1 0 0 0.3" />
+
+                            <geom name="eyes_c0" mass="0.004678" mesh="eyes_c0" class="collision"/>
+                            <geom name="eyes_c1" mass="0.004678" mesh="eyes_c1" class="collision"/>
+                            <geom name="eyes_c2" mass="0.004678" mesh="eyes_c2" class="collision"/>
+                            <geom name="eyes_c3" mass="0.004678" mesh="eyes_c3" class="collision"/>
+                            <geom name="eyes_c4" mass="0.004678" mesh="eyes_c4" class="collision"/>
+                            <geom name="eyes_c5" mass="0.004678" mesh="eyes_c5" class="collision"/>
+                            <geom name="eyes_c6" mass="0.004678" mesh="eyes_c6" class="collision"/>
+                            <geom name="eyes_c7" mass="0.004678" mesh="eyes_c0" class="collision"/>
+                            <geom name="eyes_c8" mass="0.004678" mesh="eyes_c1" class="collision"/>
+                            <geom name="eyes_c9" mass="0.004678" mesh="eyes_c2" class="collision"/>
+                            <geom name="eyes_c10" mass="0.004678" mesh="eyes_c3" class="collision"/>
+                            <geom name="eyes_c11" mass="0.004678" mesh="eyes_c4" class="collision"/>
+                            <geom name="eyes_v"  mesh="eyes" class="visual" pos="0 0.035 0.005" euler="0 0 0"/>
+  
+                        </body>
+
+
+                    </body>
+                    
+                </body>
+
+                
+            </body>
+
+
+        </body>
+
+    </worldbody>
+
+    <include file='pidog_assets.xml'/>
+    <include file='pidog_actuators.xml'/>
+    <include file='pidog_sensors.xml'/>
+
+</mujoco>

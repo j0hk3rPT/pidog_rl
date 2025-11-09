@@ -1,0 +1,97 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mujocoinclude>
+    <asset>
+        <texture builtin="gradient" height="100" rgb1="1 1 1" rgb2="0 0 0" type="skybox" width="100" />
+        <texture builtin="flat" height="1278" mark="cross" markrgb="1 1 1" name="texgeom"
+            random="0.01" rgb1="0.8 0.6 0.4" rgb2="0.8 0.6 0.4" type="cube" width="127" />
+        <texture builtin="checker" height="100" name="texplane" rgb1="0 0 0" rgb2="0.8 0.8 0.8"
+            type="2d" width="100" />
+        <material name="MatPlane" reflectance="0.5" shininess="1" specular="1" texrepeat="60 60"
+            texture="texplane" />
+        <material name="geom" texture="texgeom" texuniform="true" />
+
+        <mesh name="torso_left_c2" file="assets/meshes/torso_left/torso_left_collision_2.obj" />
+        <mesh name="torso_left" file="assets/meshes/torso_left/torso_left.obj" />
+        <mesh name="torso_left_c1" file="assets/meshes/torso_left/torso_left_collision_1.obj" />
+        <mesh name="torso_left_c0" file="assets/meshes/torso_left/torso_left_collision_0.obj" />
+        <mesh name="eyes_c4" file="assets/meshes/eyes/eyes_collision_4.obj" />
+        <mesh name="eyes_c12" file="assets/meshes/eyes/eyes_collision_12.obj" />
+        <mesh name="eyes_c5" file="assets/meshes/eyes/eyes_collision_5.obj" />
+        <mesh name="eyes_c10" file="assets/meshes/eyes/eyes_collision_10.obj" />
+        <mesh name="eyes_c1" file="assets/meshes/eyes/eyes_collision_1.obj" />
+        <mesh name="eyes_c3" file="assets/meshes/eyes/eyes_collision_3.obj" />
+        <mesh name="eyes_c8" file="assets/meshes/eyes/eyes_collision_8.obj" />
+        <mesh name="eyes_c9" file="assets/meshes/eyes/eyes_collision_9.obj" />
+        <mesh name="eyes_c11" file="assets/meshes/eyes/eyes_collision_11.obj" />
+        <mesh name="eyes" file="assets/meshes/eyes/eyes.obj" />
+        <mesh name="eyes_c2" file="assets/meshes/eyes/eyes_collision_2.obj" />
+        <mesh name="eyes_c0" file="assets/meshes/eyes/eyes_collision_0.obj" />
+        <mesh name="eyes_c6" file="assets/meshes/eyes/eyes_collision_6.obj" />
+        <mesh name="eyes_c7" file="assets/meshes/eyes/eyes_collision_7.obj" />
+        <mesh name="leg_b_c1" file="assets/meshes/leg_b/leg_b_collision_1.obj" />
+        <mesh name="leg_b_c0" file="assets/meshes/leg_b/leg_b_collision_0.obj" />
+        <mesh name="leg_b" file="assets/meshes/leg_b/leg_b.obj" />
+        <mesh name="neck2_c1" file="assets/meshes/neck2/neck2_collision_1.obj" />
+        <mesh name="neck2_c0" file="assets/meshes/neck2/neck2_collision_0.obj" />
+        <mesh name="neck2" file="assets/meshes/neck2/neck2.obj" />
+        <mesh name="neck2_c4" file="assets/meshes/neck2/neck2_collision_4.obj" />
+        <mesh name="neck2_c5" file="assets/meshes/neck2/neck2_collision_5.obj" />
+        <mesh name="neck2_c2" file="assets/meshes/neck2/neck2_collision_2.obj" />
+        <mesh name="neck2_c3" file="assets/meshes/neck2/neck2_collision_3.obj" />
+        <mesh name="neck2_c6" file="assets/meshes/neck2/neck2_collision_6.obj" />
+        <mesh name="neck3_c1" file="assets/meshes/neck3/neck3_collision_1.obj" />
+        <mesh name="neck3_c2" file="assets/meshes/neck3/neck3_collision_2.obj" />
+        <mesh name="neck3" file="assets/meshes/neck3/neck3.obj" />
+        <mesh name="neck3_c0" file="assets/meshes/neck3/neck3_collision_0.obj" />
+        <mesh name="torso_right_c2" file="assets/meshes/torso_right/torso_right_collision_2.obj" />
+        <mesh name="torso_right" file="assets/meshes/torso_right/torso_right.obj" />
+        <mesh name="torso_right_c1" file="assets/meshes/torso_right/torso_right_collision_1.obj" />
+        <mesh name="torso_right_c0" file="assets/meshes/torso_right/torso_right_collision_0.obj" />
+        <mesh name="leg_a" file="assets/meshes/leg_a/leg_a.obj" />
+        <mesh name="leg_a_c0" file="assets/meshes/leg_a/leg_a_collision_0.obj" />
+        <mesh name="neck1_c2" file="assets/meshes/neck1/neck1_collision_2.obj" />
+        <mesh name="neck1" file="assets/meshes/neck1/neck1.obj" />
+        <mesh name="neck1_c0" file="assets/meshes/neck1/neck1_collision_0.obj" />
+        <mesh name="neck1_c5" file="assets/meshes/neck1/neck1_collision_5.obj" />
+        <mesh name="neck1_c4" file="assets/meshes/neck1/neck1_collision_4.obj" />
+        <mesh name="neck1_c3" file="assets/meshes/neck1/neck1_collision_3.obj" />
+        <mesh name="neck1_c1" file="assets/meshes/neck1/neck1_collision_1.obj" />
+        <mesh name="motor_c0" file="assets/meshes/motor/motor_collision_0.obj" />
+        <mesh name="motor_c2" file="assets/meshes/motor/motor_collision_2.obj" />
+        <mesh name="motor_c1" file="assets/meshes/motor/motor_collision_1.obj" />
+        <mesh name="motor_c3" file="assets/meshes/motor/motor_collision_3.obj" />
+        <mesh name="motor" file="assets/meshes/motor/motor.obj" />
+        <mesh name="head_c1" file="assets/meshes/head/head_collision_1.obj" />
+        <mesh name="head_c5" file="assets/meshes/head/head_collision_5.obj" />
+        <mesh name="head_c6" file="assets/meshes/head/head_collision_6.obj" />
+        <mesh name="head_c4" file="assets/meshes/head/head_collision_4.obj" />
+        <mesh name="head_c2" file="assets/meshes/head/head_collision_2.obj" />
+        <mesh name="head" file="assets/meshes/head/head.obj" />
+        <mesh name="head_c3" file="assets/meshes/head/head_collision_3.obj" />
+        <mesh name="head_c8" file="assets/meshes/head/head_collision_8.obj" />
+        <mesh name="head_c7" file="assets/meshes/head/head_collision_7.obj" />
+        <mesh name="head_c0" file="assets/meshes/head/head_collision_0.obj" />
+        <mesh name="back" file="assets/meshes/back/back.obj" />
+        <mesh name="back_c2" file="assets/meshes/back/back_collision_2.obj" />
+        <mesh name="back_c0" file="assets/meshes/back/back_collision_0.obj" />
+        <mesh name="back_c7" file="assets/meshes/back/back_collision_7.obj" />
+        <mesh name="back_c5" file="assets/meshes/back/back_collision_5.obj" />
+        <mesh name="back_c1" file="assets/meshes/back/back_collision_1.obj" />
+        <mesh name="back_c6" file="assets/meshes/back/back_collision_6.obj" />
+        <mesh name="back_c4" file="assets/meshes/back/back_collision_4.obj" />
+        <mesh name="back_c3" file="assets/meshes/back/back_collision_3.obj" />
+        <mesh name="eletronics_c4" file="assets/meshes/eletronics/eletronics_collision_4.obj" />
+        <mesh name="eletronics" file="assets/meshes/eletronics/eletronics.obj" />
+        <mesh name="eletronics_c0" file="assets/meshes/eletronics/eletronics_collision_0.obj" />
+        <mesh name="eletronics_c2" file="assets/meshes/eletronics/eletronics_collision_2.obj" />
+        <mesh name="eletronics_c5" file="assets/meshes/eletronics/eletronics_collision_5.obj" />
+        <mesh name="eletronics_c3" file="assets/meshes/eletronics/eletronics_collision_3.obj" />
+        <mesh name="eletronics_c1" file="assets/meshes/eletronics/eletronics_collision_1.obj" />
+        <mesh name="chest_c0" file="assets/meshes/chest/chest_collision_0.obj" />
+        <mesh name="chest_c2" file="assets/meshes/chest/chest_collision_2.obj" />
+        <mesh name="chest_c1" file="assets/meshes/chest/chest_collision_1.obj" />
+        <mesh name="chest" file="assets/meshes/chest/chest.obj" />
+        <mesh name="acrylic_c0" file="assets/meshes/acrylic/acrylic_collision_0.obj" />
+        <mesh name="acrylic" file="assets/meshes/acrylic/acrylic.obj" />
+    </asset>
+</mujocoinclude>
