@@ -29,12 +29,12 @@ def simple_walk_gait_adjusted(num_steps=48):
     Create walking gait with adjusted neutral position.
 
     Neutral adjustments:
-    - Shoulders moved back 10° (hip: -30° → -40°)
+    - Base angles: hip=-45°, knee=-45°
     - Front legs offset forward, back legs offset back for spacing
     """
-    # Base neutral (moved back 10°)
-    base_hip = -np.pi / 6 - np.pi / 18  # -30° - 10° = -40°
-    base_knee = -np.pi / 6  # -30° (less bent for wider stance)
+    # Base neutral
+    base_hip = -np.pi / 4  # -45°
+    base_knee = -np.pi / 4  # -45°
 
     # Front/back spacing offset
     front_offset = 0.3  # Front legs ~17° forward
