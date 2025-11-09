@@ -1,5 +1,5 @@
-# Use ROCm JAX as base image (includes Python 3.12 and ROCm support)
-FROM rocm/jax:latest
+# Use ROCm PyTorch as base image (includes Python, PyTorch, and ROCm support)
+FROM rocm/pytorch:latest
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -30,12 +30,11 @@ RUN apt-get update && apt-get install -y \
     htop \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies (using pip from base image)
+# Install Python dependencies (PyTorch already included in base image)
 RUN pip install --no-cache-dir \
     mujoco \
     gymnasium \
     "stable-baselines3[extra]" \
-    torch \
     tensorboard \
     matplotlib \
     numpy
