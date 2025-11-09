@@ -49,22 +49,47 @@ def parse_args():
 
 def hardcoded_policy(obs, step):
     """
-    Hardcoded walking policy using sinusoidal gait.
+    Hardcoded walking policy using realistic trotting gait.
+
+    Based on SunFounder SF006FM servo specs:
+    - Range: 0-180° (0 to π radians)
+    - Neutral position: 90° (π/2 radians)
+    - Movement amplitude: ±30° for hip, ±45° for knee
 
     Creates a trotting gait where diagonal legs move together.
     """
     t = step * 0.05  # Time parameter
+    frequency = 1.5  # Hz
 
-    # Trotting gait: Front-left with back-right, front-right with back-left
+    # Neutral position at 90° (π/2)
+    neutral = np.pi / 2
+
+    # Movement amplitudes (in radians)
+    hip_amplitude = 0.52  # ±30° converted to radians
+    knee_amplitude = 0.79  # ±45° converted to radians
+
+    phase = 2 * np.pi * frequency * t
+
+    # Trotting gait: diagonal pairs move together
+    # Back-right with front-left (normalized to [-1, 1])
+    back_right_hip = 0.6 * np.sin(phase)
+    back_right_knee = 0.8 * np.cos(phase)
+    front_left_hip = 0.6 * np.sin(phase)
+    front_left_knee = 0.8 * np.cos(phase)
+
+    # Front-right with back-left (opposite phase)
+    front_right_hip = 0.6 * np.sin(phase + np.pi)
+    front_right_knee = 0.8 * np.cos(phase + np.pi)
+    back_left_hip = 0.6 * np.sin(phase + np.pi)
+    back_left_knee = 0.8 * np.cos(phase + np.pi)
+
+    # Return normalized actions [-1, 1]
+    # Order: back_right, front_right, back_left, front_left (each with hip, knee)
     action = np.array([
-        0.3 * np.sin(t),          # Front left shoulder
-        0.6 * np.cos(t),          # Front left knee
-        0.3 * np.sin(t + np.pi),  # Front right shoulder
-        0.6 * np.cos(t + np.pi),  # Front right knee
-        0.3 * np.sin(t + np.pi),  # Back left shoulder
-        0.6 * np.cos(t + np.pi),  # Back left knee
-        0.3 * np.sin(t),          # Back right shoulder
-        0.6 * np.cos(t),          # Back right knee
+        back_right_hip, back_right_knee,
+        front_right_hip, front_right_knee,
+        back_left_hip, back_left_knee,
+        front_left_hip, front_left_knee,
     ])
 
     return action

@@ -206,6 +206,34 @@ uv run python training/train_rl.py --algorithm ppo --total-timesteps 100000
 docker-compose up -d tensorboard
 ```
 
+### Run GUI Visualization in Docker
+
+To run MuJoCo visualization windows from Docker:
+
+```bash
+# Option 1: Use helper script (recommended)
+./scripts/docker_run_gui.sh
+
+# Then inside container:
+docker exec -it pidog_rl_training bash
+uv run python tests/test_walk.py
+
+# Option 2: Manual setup
+# Allow X server connections
+xhost +local:docker
+
+# Start container with GUI support
+export MUJOCO_GL=glfw
+docker-compose up -d pidog_rl
+
+# Enter and run visualization
+docker exec -it pidog_rl_training bash
+uv run python tests/test_walk.py  # Walking simulation
+uv run python tests/sit.py         # Basic visualization
+```
+
+**Note**: GUI requires X11 server (Linux/macOS with XQuartz). For headless rendering, use `MUJOCO_GL=osmesa`.
+
 ### GPU Support (ROCm)
 
 The Docker setup is configured for AMD GPUs with ROCm. For specific GPU versions:

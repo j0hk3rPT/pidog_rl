@@ -24,10 +24,14 @@ services:
 
     # Environment variables
     environment:
-      - MUJOCO_GL=osmesa
+      # Use 'glfw' for GUI window, 'osmesa' for headless rendering
+      - MUJOCO_GL=${MUJOCO_GL:-glfw}
       - DISPLAY=${DISPLAY:-:0}
+      - QT_X11_NO_MITSHM=1
+      - LIBGL_ALWAYS_INDIRECT=0
       - HSA_OVERRIDE_GFX_VERSION=${HSA_OVERRIDE_GFX_VERSION:-}
       - ROCM_VERSION=${ROCM_VERSION:-latest}
+      - XAUTHORITY=${XAUTHORITY:-$HOME/.Xauthority}
 
     # Volume mappings
     volumes:
@@ -38,8 +42,10 @@ services:
       - ./logs:/workspace/pidog_rl/logs
       - ./checkpoints:/workspace/pidog_rl/checkpoints
       - ./datasets:/workspace/pidog_rl/datasets
-      # X11 socket for GUI (optional)
+      # X11 socket for GUI
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      # X11 authentication (for security)
+      - ${XAUTHORITY:-$HOME/.Xauthority}:/root/.Xauthority:ro
 
     # Port mappings
     ports:

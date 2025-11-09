@@ -1,0 +1,83 @@
+<!--
+  PiDog Actuator Definitions
+
+  Servo Specifications: SunFounder SF006FM 9g Digital Servo
+  - Torque: 0.127-0.137 Nm (1.3-1.4 kgf·cm at 4.8-6V)
+  - Speed: 333-400°/s (5.8-7.0 rad/s)
+  - Operating voltage: 4.8-6.0V
+  - Range: 0-180° (0 to π radians)
+-->
+
+<mujoco>
+    <actuator>
+        <!--
+        Using position servos with realistic constraints
+        - ctrlrange: 0 to π radians (0-180°)
+        - forcerange: ±0.137 Nm (max torque at 6V)
+        - gear: 1 (direct drive)
+
+        Note: Velocity limiting is handled in the environment code
+        to match the 7.0 rad/s max speed specification
+        -->
+
+        <!-- Back Right Leg -->
+        <position name="back_right_hip_actuator"
+                  joint="back_right_hip"
+                  ctrlrange="0 3.14159"
+                  forcerange="-0.137 0.137"
+                  kp="5.0"
+                  gear="1"/>
+
+        <position name="back_right_knee_actuator"
+                  joint="back_right_knee"
+                  ctrlrange="0 3.14159"
+                  forcerange="-0.137 0.137"
+                  kp="5.0"
+                  gear="1"/>
+
+        <!-- Front Right Leg -->
+        <position name="front_right_hip_actuator"
+                  joint="front_right_hip"
+                  ctrlrange="0 3.14159"
+                  forcerange="-0.137 0.137"
+                  kp="5.0"
+                  gear="1"/>
+
+        <position name="front_right_knee_actuator"
+                  joint="front_right_knee"
+                  ctrlrange="0 3.14159"
+                  forcerange="-0.137 0.137"
+                  kp="5.0"
+                  gear="1"/>
+
+        <!-- Back Left Leg -->
+        <position name="back_left_hip_actuator"
+                  joint="back_left_hip"
+                  ctrlrange="0 3.14159"
+                  forcerange="-0.137 0.137"
+                  kp="5.0"
+                  gear="1"/>
+
+        <position name="back_left_knee_actuator"
+                  joint="back_left_knee"
+                  ctrlrange="0 3.14159"
+                  forcerange="-0.137 0.137"
+                  kp="5.0"
+                  gear="1"/>
+
+        <!-- Front Left Leg -->
+        <position name="front_left_hip_actuator"
+                  joint="front_left_hip"
+                  ctrlrange="0 3.14159"
+                  forcerange="-0.137 0.137"
+                  kp="5.0"
+                  gear="1"/>
+
+        <position name="front_left_knee_actuator"
+                  joint="front_left_knee"
+                  ctrlrange="0 3.14159"
+                  forcerange="-0.137 0.137"
+                  kp="5.0"
+                  gear="1"/>
+    </actuator>
+</mujoco>

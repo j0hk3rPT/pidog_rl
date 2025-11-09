@@ -320,7 +320,8 @@
         </body>
 
     </worldbody>
-    
+
     <include file='pidog_assets.xml'/>
+    <include file='pidog_actuators.xml'/>
 
 </mujoco>

@@ -78,11 +78,26 @@ class PiDogEnv(gym.Env):
             dtype=np.float32
         )
 
-        # Joint limits (approximate, in radians)
-        self.joint_limits = {
-            "shoulder": (-np.pi/3, np.pi/3),  # ±60 degrees
-            "knee": (-np.pi/2, np.pi/2),       # ±90 degrees
+        # Servo specifications (SunFounder SF006FM 9g Digital Servo)
+        # Real hardware constraints for sim-to-real transfer
+        self.servo_specs = {
+            "range": (0, np.pi),              # 0-180° in radians
+            "max_torque": 0.137,              # Nm (at 6V)
+            "min_torque": 0.127,              # Nm (at 4.8V)
+            "max_speed": 7.0,                 # rad/s (400°/s)
+            "min_speed": 5.8,                 # rad/s (333°/s)
+            "voltage_range": (4.8, 6.0),      # Operating voltage
         }
+
+        # Joint limits (based on real servo: 0-180°)
+        # Centered at π/2 (90°), with ±π/2 range
+        self.joint_limits = {
+            "shoulder": (0, np.pi),           # 0-180° full range
+            "knee": (0, np.pi),               # 0-180° full range
+        }
+
+        # Previous action for velocity limiting
+        self.prev_action = None
 
         # Simulation parameters
         self.dt = self.model.opt.timestep
@@ -128,17 +143,32 @@ class PiDogEnv(gym.Env):
         return obs.astype(np.float32)
 
     def _scale_action(self, action):
-        """Scale normalized action [-1, 1] to actual joint limits."""
+        """
+        Scale normalized action [-1, 1] to actual joint limits with servo constraints.
+
+        Applies realistic servo limitations:
+        - Range: 0-180° (0 to π radians)
+        - Max speed: 7.0 rad/s (400°/s)
+        """
         scaled_action = np.zeros_like(action)
 
-        # For each joint, scale to its limits
+        # For each joint, scale to its limits (all servos have 0-180° range)
         for i in range(self.n_joints):
-            if i % 2 == 0:  # Shoulder joints
-                low, high = self.joint_limits["shoulder"]
-            else:  # Knee joints
-                low, high = self.joint_limits["knee"]
-
+            low, high = self.servo_specs["range"]
+            # Map from [-1, 1] to [0, π]
             scaled_action[i] = low + (action[i] + 1.0) * 0.5 * (high - low)
+
+        # Apply velocity limiting (simulate servo speed constraints)
+        if self.prev_action is not None:
+            max_delta = self.servo_specs["max_speed"] * self.dt * self.frame_skip
+            delta = scaled_action - self.prev_action
+
+            # Clip to max speed
+            delta = np.clip(delta, -max_delta, max_delta)
+            scaled_action = self.prev_action + delta
+
+        # Store for next step
+        self.prev_action = scaled_action.copy()
 
         return scaled_action
 
@@ -201,14 +231,19 @@ class PiDogEnv(gym.Env):
         if seed is not None:
             np.random.seed(seed)
 
-        # Randomize initial joint positions slightly
-        self.data.qpos[7:15] += np.random.uniform(-0.1, 0.1, 8)
+        # Randomize initial joint positions slightly around neutral (π/2)
+        # Servos start at mid-range (90°)
+        neutral_pos = np.pi / 2
+        self.data.qpos[7:15] = neutral_pos + np.random.uniform(-0.1, 0.1, 8)
 
         # Set body to target height
         self.data.qpos[2] = 0.15
 
         # Forward the simulation to settle
         mujoco.mj_forward(self.model, self.data)
+
+        # Reset action tracking for velocity limiting
+        self.prev_action = None
 
         self.step_count = 0
 
