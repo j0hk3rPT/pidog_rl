@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 
-def test_angles(model, data, viewer, hip_angle, knee_angle, duration=5.0):
+def test_angles(model, data, viewer, hip_angle, knee_angle, duration=2.0):
     """Test a specific angle combination."""
     print(f"\nTesting Hip={np.degrees(hip_angle):.0f}°, Knee={np.degrees(knee_angle):.0f}°")
 
@@ -40,12 +40,11 @@ def test_angles(model, data, viewer, hip_angle, knee_angle, duration=5.0):
 
     # Report final state
     final_height = data.qpos[2]
-    print(f"  Final height: {final_height:.3f}m (started at 0.10m)")
 
+    # Only print if potentially good
     if final_height > 0.05:
+        print(f"  Final height: {final_height:.3f}m (started at 0.10m)")
         print(f"  ✓ STABLE - Good standing pose!")
-    else:
-        print(f"  ✗ Collapsed to ground")
 
     return final_height
 
@@ -64,24 +63,23 @@ def main():
     print(f"\nTesting different angle combinations...")
     print(f"Looking for stable standing height > 0.05m\n")
 
-    # Test different combinations
-    # Hip range: 30° to 150°
-    # Knee range: 0° to 90°
+    # Test different combinations - EXPANDED SEARCH
+    # Hip range: 0° to 180°
+    # Knee range: 0° to 180°
 
-    test_cases = [
-        # (hip_deg, knee_deg)
-        (90, 0),    # Hip 90°, Knee straight
-        (90, 30),   # Hip 90°, Knee 30°
-        (90, 45),   # Hip 90°, Knee 45° (current)
-        (90, 60),   # Hip 90°, Knee 60°
-        (90, 90),   # Hip 90°, Knee 90°
-        (60, 45),   # Hip 60°, Knee 45°
-        (120, 45),  # Hip 120°, Knee 45°
-        (45, 45),   # Hip 45°, Knee 45°
-        (135, 45),  # Hip 135°, Knee 45°
-        (90, 20),   # Hip 90°, Knee 20°
-        (90, 10),   # Hip 90°, Knee 10°
-    ]
+    test_cases = []
+
+    # Test all combinations systematically
+    print("Testing Hip angles: 0° to 180° in 15° steps")
+    print("Testing Knee angles: 0° to 180° in 15° steps")
+    print()
+
+    for hip_deg in range(0, 181, 15):
+        for knee_deg in range(0, 181, 15):
+            test_cases.append((hip_deg, knee_deg))
+
+    print(f"Total test cases: {len(test_cases)}")
+    print("This will take ~5 minutes...\n")
 
     with mujoco.viewer.launch_passive(model, data) as viewer:
         viewer.cam.distance = 1.0
@@ -94,7 +92,7 @@ def main():
             hip_rad = np.radians(hip_deg)
             knee_rad = np.radians(knee_deg)
 
-            height = test_angles(model, data, viewer, hip_rad, knee_rad, duration=3.0)
+            height = test_angles(model, data, viewer, hip_rad, knee_rad, duration=2.0)
             results.append((hip_deg, knee_deg, height))
 
         print("\n" + "=" * 60)
@@ -104,13 +102,23 @@ def main():
         # Sort by height (best first)
         results.sort(key=lambda x: x[2], reverse=True)
 
-        for hip_deg, knee_deg, height in results:
-            status = "✓ GOOD" if height > 0.05 else "✗ BAD"
-            print(f"{status} Hip={hip_deg:3d}°, Knee={knee_deg:3d}° → Height={height:.3f}m")
+        # Show only good results (> 0.05m) and top 20
+        good_results = [r for r in results if r[2] > 0.05]
+
+        if good_results:
+            print(f"\nGOOD RESULTS (height > 0.05m):")
+            for hip_deg, knee_deg, height in good_results[:20]:
+                print(f"✓ Hip={hip_deg:3d}°, Knee={knee_deg:3d}° → Height={height:.3f}m")
+        else:
+            print("\nNO GOOD RESULTS FOUND!")
+            print("Showing top 10 best (even though all collapsed):")
+            for hip_deg, knee_deg, height in results[:10]:
+                print(f"✗ Hip={hip_deg:3d}°, Knee={knee_deg:3d}° → Height={height:.3f}m")
 
         print("\n" + "=" * 60)
         best = results[0]
-        print(f"BEST: Hip={best[0]}°, Knee={best[1]}° → Height={best[2]:.3f}m")
+        status = "✓ GOOD" if best[2] > 0.05 else "✗ COLLAPSED"
+        print(f"{status} BEST: Hip={best[0]}°, Knee={best[1]}° → Height={best[2]:.3f}m")
         print("=" * 60)
 
 
