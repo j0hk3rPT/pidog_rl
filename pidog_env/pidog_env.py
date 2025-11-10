@@ -327,15 +327,15 @@ class PiDogEnv(gym.Env):
         """
         Compute reward based on current state.
 
-        NEW REWARD STRUCTURE:
+        REWARD STRUCTURE:
         1. Forward velocity (MAIN GOAL) - high weight
         2. Obstacle avoidance using ultrasonic - critical for safety
         3. Upright stability - important for not falling
         4. Stationary penalty - must keep moving
         5. Energy efficiency - smooth movements
         6. Lateral stability - walk straight
-
-        REMOVED: Height maintenance (don't care about crouch vs stand)
+        7. Leg collision penalty - avoid unnatural gaits
+        8. Height maintenance - prevent crouching/lowering
         """
         forward_vel = self.data.qvel[0]
 
@@ -398,12 +398,20 @@ class PiDogEnv(gym.Env):
         collision_penalty = -2.0 * leg_collisions  # -2.0 per collision
 
 
+        # ============= 8. HEIGHT MAINTENANCE (RE-ADDED!) =============
+        # Penalize deviation from standing height - prevents crouching/lowering
+        body_height = self.data.qpos[2]
+        target_height = 0.14  # Standing height from reset
+        height_penalty = -2.0 * abs(body_height - target_height)
+
+
         # ============= COMBINE ALL REWARDS =============
         reward = (
             3.0 * velocity_reward +      # Forward speed (PRIMARY - 50%)
             1.0 * obstacle_penalty +     # Avoid obstacles (CRITICAL - 20%)
             1.5 * upright_reward +       # Stay balanced (IMPORTANT - 20%)
             1.0 * stationary_penalty +   # Don't get stuck (IMPORTANT - 10%)
+            1.0 * height_penalty +       # Maintain standing height (IMPORTANT)
             action_penalty +             # Be efficient
             lateral_penalty +            # Walk straight
             collision_penalty            # Avoid leg collisions (NEW!)
