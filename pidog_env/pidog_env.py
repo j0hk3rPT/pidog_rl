@@ -115,14 +115,14 @@ class PiDogEnv(gym.Env):
             dtype=np.float32
         )
 
-        # Servo specifications (SunFounder SF006FM 9g Digital Servo)
+        # Servo specifications (MG90S Metal Gear Servo)
         # Real hardware constraints for sim-to-real transfer
         self.servo_specs = {
             "range": (-np.pi/2, np.pi),       # Extended range to support negative angles
-            "max_torque": 0.137,              # Nm (at 6V)
-            "min_torque": 0.127,              # Nm (at 4.8V)
-            "max_speed": 7.0,                 # rad/s (400°/s)
-            "min_speed": 5.8,                 # rad/s (333°/s)
+            "max_torque": 0.216,              # Nm (at 6V)
+            "min_torque": 0.176,              # Nm (at 4.8V)
+            "max_speed": 13.09,               # rad/s (750°/s at 6V)
+            "min_speed": 10.47,               # rad/s (600°/s at 4.8V)
             "voltage_range": (4.8, 6.0),      # Operating voltage
         }
 
@@ -386,7 +386,7 @@ class PiDogEnv(gym.Env):
 
         Applies realistic servo limitations:
         - Range: -90° to 180° (-π/2 to π radians)
-        - Max speed: 7.0 rad/s (400°/s)
+        - Max speed: 13.09 rad/s (750°/s at 6V)
         """
         scaled_action = np.zeros_like(action)
 
@@ -727,7 +727,7 @@ class PiDogEnv(gym.Env):
         for _ in range(self.frame_skip):
             mujoco.mj_step(self.model, self.data)
 
-            # Enforce realistic servo velocity limits (7.0 rad/s for SF006FM servos)
+            # Enforce realistic servo velocity limits (13.09 rad/s for MG90S servos)
             # Clamp joint velocities to hardware specifications
             joint_velocities = self.data.qvel[6:14]  # 8 leg joints
             np.clip(joint_velocities, -self.servo_specs['max_speed'],

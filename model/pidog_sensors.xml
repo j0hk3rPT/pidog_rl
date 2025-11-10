@@ -3,8 +3,8 @@
 
   This file defines sensors matching the real PiDog hardware:
   - Camera (OV5647 5MP) - Front-facing RGB camera
-  - Ultrasonic (HC-SR04) - Distance sensor (2-450cm range)
-  - IMU (MPU6050) - 6-DOF: 3-axis accelerometer + 3-axis gyroscope
+  - Ultrasonic (HC-SR04) - Distance sensor (2-400cm range)
+  - IMU (SH3001) - 6-DOF: 3-axis accelerometer + 3-axis gyroscope
 
   Sensors are attached to sites defined in pidog.xml
   Noise parameters match real hardware specifications
@@ -19,23 +19,24 @@
 
     <!-- ==================== ULTRASONIC RANGEFINDER ==================== -->
     <!-- HC-SR04 Ultrasonic Distance Sensor -->
-    <!-- Range: 2cm - 450cm (0.02m - 4.5m) -->
+    <!-- Range: 2cm - 400cm (0.02m - 4.0m) -->
     <!-- Accuracy: ±3mm (0.003m) -->
     <!-- Beam angle: <15° (narrow cone along Z-axis) -->
 
     <rangefinder name="ultrasonic"
                  site="ultrasonic_site"
-                 cutoff="4.5"
+                 cutoff="4.0"
                  noise="0.003"/>
 
 
-    <!-- ==================== IMU SENSORS (MPU6050) ==================== -->
+    <!-- ==================== IMU SENSORS (SH3001) ==================== -->
     <!-- Mounted at center of body (electronics compartment) -->
 
     <!-- 3-Axis Accelerometer -->
-    <!-- Range: ±16g (to handle impacts and dynamic motion) -->
-    <!-- Noise: ~0.01 m/s² (typical MPU6050 noise level) -->
+    <!-- Range: ±16g (default, to handle impacts and dynamic motion) -->
+    <!-- Noise: ~0.01 m/s² (estimated, manufacturer datasheet not public) -->
     <!-- Output: [ax, ay, az] in m/s² (includes gravity) -->
+    <!-- Note: SH3001 supports ±2g/±4g/±8g/±16g ranges, default is ±16g -->
 
     <accelerometer name="imu_accel"
                    site="imu_site"
@@ -43,9 +44,10 @@
 
 
     <!-- 3-Axis Gyroscope -->
-    <!-- Range: ±1000°/s (~17.45 rad/s) for dynamic movements -->
-    <!-- Noise: ~0.005 rad/s (typical MPU6050 noise level) -->
+    <!-- Range: ±2000°/s (~34.9 rad/s, default) for dynamic movements -->
+    <!-- Noise: ~0.005 rad/s (estimated, manufacturer datasheet not public) -->
     <!-- Output: [ωx, ωy, ωz] in rad/s -->
+    <!-- Note: SH3001 supports ±125/±250/±500/±1000/±2000°/s, default is ±2000°/s -->
 
     <gyro name="imu_gyro"
           site="imu_site"
