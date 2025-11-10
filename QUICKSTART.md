@@ -209,7 +209,7 @@ python3 -c "import torch; print(torch.cuda.is_available())"
 ## Next Steps
 
 After training a model:
-1. Visualize it using `visualize_walk.py` with `--mode policy`
+1. Test it using `training/test_trained_model.py <path_to_model.zip>`
 2. Export it for deployment on the real robot using `scripts/export_for_pi.py`
 3. Fine-tune using additional RL training
 4. Try combining multiple gaits for more robust behavior

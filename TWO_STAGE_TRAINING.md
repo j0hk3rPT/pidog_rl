@@ -162,7 +162,7 @@ Navigate to http://localhost:6006 to view:
 
 After training, you can:
 
-1. **Evaluate the model**: See `scripts/visualize_walk.py`
+1. **Test the model**: See `training/test_trained_model.py`
 2. **Deploy to hardware**: Export to real PiDog robot
 3. **Further fine-tuning**: Add BC pretraining with `--pretrain-bc`
 

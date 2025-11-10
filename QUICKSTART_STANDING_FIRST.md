@@ -197,13 +197,13 @@ python training/train_ppo.py --curriculum-level 0 --checkpoint outputs/standing/
 python training/train_ppo.py --curriculum-level 2 --checkpoint outputs/walking/ppo_final_model.zip --disable-camera --total-timesteps 1_000_000 --learning-rate 5e-5 --experiment-name advanced
 
 # View the trained robot
-python scripts/visualize_walk.py outputs/advanced/ppo_final_model.zip
+python training/test_trained_model.py outputs/advanced/ppo_final_model.zip
 ```
 
 ## Next Steps
 
 After training:
-1. **Visualize**: `python scripts/visualize_walk.py outputs/expert_walking/ppo_final_model.zip`
+1. **Test model**: `python training/test_trained_model.py outputs/expert_walking/ppo_final_model.zip`
 2. **Export for hardware**: `python scripts/export_for_pi.py outputs/expert_walking/ppo_final_model.zip`
 3. **Continue training**: Add `--checkpoint` to any command to keep improving
 

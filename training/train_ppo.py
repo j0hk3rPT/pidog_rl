@@ -463,7 +463,7 @@ def main():
     print("="*70)
     print(f"Results saved in: {experiment_dir}")
     print(f"\nNext steps:")
-    print(f"  1. Visualize: python scripts/visualize_walk.py {final_model_path}.zip")
+    print(f"  1. Test model: python training/test_trained_model.py {final_model_path}.zip")
     print(f"  2. TensorBoard: tensorboard --logdir={args.log_dir}")
     print(f"  3. Continue training: --checkpoint {final_model_path}.zip")
     print()

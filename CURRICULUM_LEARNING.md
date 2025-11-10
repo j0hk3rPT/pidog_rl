@@ -392,7 +392,7 @@ The robot learns recovery behaviors gradually. If after 2M+ timesteps at Level 1
 ## Next Steps
 
 After curriculum training:
-1. **Evaluate**: Use `scripts/visualize_walk.py` to see the policy in action
+1. **Test model**: Use `training/test_trained_model.py` to see the policy in action
 2. **Real hardware**: Export with `scripts/export_for_pi.py`
 3. **Further tuning**: Try BC pretraining with `--pretrain-bc` at Level 0
 
