@@ -140,6 +140,10 @@ class PiDogEnv(gym.Env):
         # Previous action for velocity limiting
         self.prev_action = None
 
+        # Tracking for acceleration penalties (industry standard)
+        self.prev_joint_vel = None  # For joint acceleration penalty
+        self.prev_base_vel = None   # For base acceleration penalty
+
         # Simulation parameters
         self.dt = self.model.opt.timestep
         self.frame_skip = 5
@@ -462,10 +466,18 @@ class PiDogEnv(gym.Env):
                 obstacle_penalty = -2.0 * (self.obstacle_danger_distance - ultrasonic_dist)
 
 
-        # ============= 3. UPRIGHT STABILITY =============
+        # ============= 3. ORIENTATION STABILITY (CRITICAL FIX #4) =============
+        # FIXED: Use roll/pitch angles instead of confusing quaternion reward
+        # Industry standard: Penalize tilting (roll) and pitching
         body_quat = self.data.qpos[3:7]  # MuJoCo format: [w, x, y, z]
-        # w component (1 = upright, 0 = sideways/tilted)
-        upright_reward = 2.0 * (body_quat[0] - 0.7)  # Bonus for staying upright
+
+        # Convert quaternion to roll and pitch (simplified approximation)
+        # For small angles: roll ≈ 2*arctan2(x, w), pitch ≈ 2*arctan2(y, w)
+        roll = 2.0 * np.arctan2(body_quat[1], body_quat[0])
+        pitch = 2.0 * np.arctan2(body_quat[2], body_quat[0])
+
+        # Penalize tilting (always negative or zero, clear signal)
+        orientation_penalty = -0.5 * (roll**2 + pitch**2)
 
 
         # ============= 4. FALL PENALTY (ONLY FOR ACTUAL FALLS) =============
@@ -496,9 +508,33 @@ class PiDogEnv(gym.Env):
                 stationary_penalty = -5.0  # Heavy penalty for being stuck
 
 
-        # ============= 6. ENERGY EFFICIENCY =============
-        # Encourage smooth, efficient movements
-        action_penalty = -0.005 * np.sum(np.square(self.data.ctrl))
+        # ============= 6. ENERGY EFFICIENCY & SMOOTHNESS =============
+        # Industry standard: Strong penalties for violent/jerky movements
+
+        # 6a. Action smoothness (increased from 0.005 to industry standard)
+        action_penalty = -0.02 * np.sum(np.square(self.data.ctrl))
+
+        # 6b. CRITICAL FIX #1: Torque penalty (MISSING in original)
+        # Penalize actual joint torques to prevent flailing
+        torques = self.data.actuator_force  # Actual forces applied by servos
+        torque_penalty = -0.0002 * np.sum(np.square(torques))
+
+        # 6c. CRITICAL FIX #2: Joint acceleration penalty (MISSING in original)
+        # Penalize jerky movements between timesteps
+        joint_velocities = self.data.qvel[6:14]  # 8 leg joints
+        if self.prev_joint_vel is not None:
+            joint_acc = (joint_velocities - self.prev_joint_vel) / (self.dt * self.frame_skip)
+            joint_acc_penalty = -0.01 * np.sum(np.square(joint_acc))
+        else:
+            joint_acc_penalty = 0.0
+
+        # 6d. Base acceleration penalty (smooth body movements)
+        base_vel = self.data.qvel[:3]  # x, y, z velocity
+        if self.prev_base_vel is not None:
+            base_acc = (base_vel - self.prev_base_vel) / (self.dt * self.frame_skip)
+            base_acc_penalty = -0.5 * np.sum(np.square(base_acc))
+        else:
+            base_acc_penalty = 0.0
 
 
         # ============= 7. LATERAL STABILITY =============
@@ -519,25 +555,35 @@ class PiDogEnv(gym.Env):
         survival_bonus = 0.1
 
 
-        # ============= 10. GAIT QUALITY / STANDING POSTURE REWARD =============
-        joint_velocities = self.data.qvel[6:14]  # 8 leg joints
-        leg_vel_variance = np.var(joint_velocities)
+        # ============= 10. GAIT QUALITY / STANDING POSTURE (CRITICAL FIX #5) =============
+        # FIXED: Simplified standing mode to remove conflicting objectives
 
         if self.curriculum_level < 0:
-            # STANDING MODE: Reward stable, neutral posture
-            # Low joint velocities = good standing
-            gait_quality = 0.0
-            if leg_vel_variance < 0.2:  # Very still = good
-                gait_quality = 2.0
+            # STANDING MODE: Simple, clear objective - minimize movement and stay near neutral
 
-            # Bonus: reward being near neutral joint positions
+            # 10a. Joint position error (want to be near neutral)
             joint_pos = self.data.qpos[7:15]
             neutral_positions = np.array([self.neutral_hip, self.neutral_knee] * 4)
-            position_error = np.mean(np.abs(joint_pos - neutral_positions))
-            posture_reward = max(0, 1.0 - position_error * 2.0)  # 0-1 based on error
+            pose_error_squared = np.sum(np.square(joint_pos - neutral_positions))
+            standing_pose_penalty = -1.0 * pose_error_squared
+
+            # 10b. Joint velocity penalty (want to be still)
+            # (joint_velocities already defined in section 6c)
+            joint_vel_penalty = -0.5 * np.sum(np.square(joint_velocities))
+
+            # 10c. Base velocity penalty (body should not move)
+            # (base_vel already defined in section 6d)
+            base_vel_penalty = -2.0 * np.sum(np.square(base_vel))
+
+            # Combine standing rewards
+            gait_quality = 0.0  # Not used in standing
+            posture_reward = standing_pose_penalty + joint_vel_penalty + base_vel_penalty
+
         else:
             # WALKING MODE: Reward rhythmic leg movement
-            # Good gait has moderate variance (legs moving at different speeds rhythmically)
+            leg_vel_variance = np.var(joint_velocities)
+
+            # Good gait has moderate variance (legs moving rhythmically)
             # Too low = frozen/stationary, too high = flailing/chaotic
             gait_quality = 0.0
             if 0.5 < leg_vel_variance < 3.0:  # Sweet spot for coordinated movement
@@ -561,19 +607,32 @@ class PiDogEnv(gym.Env):
 
 
         # ============= COMBINE ALL REWARDS =============
+        # Industry-standard reward structure with critical smoothness penalties
         reward = (
+            # Task objectives (40-50%)
             2.0 * velocity_reward +      # Forward speed / standing still
-            1.0 * obstacle_penalty +     # Avoid obstacles
-            2.0 * upright_reward +       # Stay balanced
-            1.0 * fall_penalty +         # Penalize actual falls
-            1.0 * stationary_penalty +   # Don't get stuck (disabled in standing)
-            1.0 * survival_bonus +       # Reward staying alive
-            1.0 * gait_quality +         # Gait quality / standing stillness
-            1.0 * posture_reward +       # Neutral posture (standing only)
             1.0 * height_reward +        # Height maintenance
-            action_penalty +             # Be efficient
-            lateral_penalty +            # Walk straight / no lateral drift
-            collision_penalty            # Avoid leg collisions
+
+            # Stability (20-30%)
+            2.0 * orientation_penalty +  # FIXED: Stay upright (roll/pitch)
+            1.0 * lateral_penalty +      # Walk straight / no lateral drift
+            1.0 * obstacle_penalty +     # Avoid obstacles
+
+            # Smoothness & energy (25-35%) - CRITICAL FIXES
+            action_penalty +             # Smooth actions (4x stronger now)
+            torque_penalty +             # NEW: Prevent flailing
+            joint_acc_penalty +          # NEW: Smooth joint movements
+            base_acc_penalty +           # NEW: Smooth body movements
+
+            # Gait & posture (10-15%)
+            1.0 * gait_quality +         # Gait rhythmicity (walking only)
+            1.0 * posture_reward +       # FIXED: Simplified standing mode
+
+            # Safety & constraints (10-20%)
+            1.0 * fall_penalty +         # Penalize actual falls (-20)
+            1.0 * stationary_penalty +   # Don't get stuck (walking only)
+            collision_penalty +          # Avoid leg collisions
+            1.0 * survival_bonus         # Reward staying alive (+0.1/step)
         )
 
         return reward
@@ -699,6 +758,10 @@ class PiDogEnv(gym.Env):
         # Reset action tracking for velocity limiting
         self.prev_action = None
 
+        # Reset velocity tracking for acceleration penalties
+        self.prev_joint_vel = None
+        self.prev_base_vel = None
+
         # Reset velocity history for stationary detection
         self.velocity_history = []
 
@@ -738,6 +801,11 @@ class PiDogEnv(gym.Env):
 
         # Compute reward
         reward = self._compute_reward()
+
+        # Track velocities for next step's acceleration penalties
+        # (MUST be after reward computation, before next step)
+        self.prev_joint_vel = self.data.qvel[6:14].copy()  # 8 leg joints
+        self.prev_base_vel = self.data.qvel[:3].copy()     # x, y, z velocity
 
         # Check termination conditions
         terminated = self._is_terminated()
