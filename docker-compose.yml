@@ -28,6 +28,11 @@ services:
     # IPC mode for shared memory
     ipc: host
 
+    # Memory limits (increase for large replay buffers)
+    shm_size: '8gb'
+    mem_limit: 24g
+    memswap_limit: 24g
+
     # Environment variables
     environment:
       - DISPLAY=${DISPLAY:-:0}
