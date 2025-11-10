@@ -31,10 +31,10 @@ The training system now uses:
 
 **Training command**:
 ```bash
-python training/train_rl.py \
+python training/train_ppo.py \
   --curriculum-level -1 \
+  --disable-camera \
   --total-timesteps 1_000_000 \
-  --n-envs 16 \
   --experiment-name standing_only
 ```
 
@@ -58,12 +58,16 @@ python training/train_rl.py \
 
 **Training command**:
 ```bash
-python training/train_rl.py \
+python training/train_ppo.py \
   --curriculum-level 0 \
+  --checkpoint outputs/standing_only/ppo_final_model.zip \
+  --disable-camera \
   --total-timesteps 2_000_000 \
-  --n-envs 16 \
+  --learning-rate 1e-4 \
   --experiment-name basic_walking
 ```
+
+**Note:** Load the standing checkpoint! This gives the robot a head start with balance.
 
 ### Level 1: Intermediate
 **Goal**: Faster walking with initial perturbations
@@ -72,15 +76,17 @@ python training/train_rl.py \
 - Joint noise: ±0.15 rad (+50% variation)
 - Height variation: ±0.03m
 - Initial orientation: Small tilt (±2.8°)
-- **Best for**: Fine-tuning after basic walking works
+- **Best for**: After basic walking, before advanced training
 
 **Training command**:
 ```bash
-python training/train_rl.py \
+python training/train_ppo.py \
   --curriculum-level 1 \
-  --checkpoint outputs/level0/ppo_final_model.zip \
+  --checkpoint outputs/basic_walking/ppo_final_model.zip \
+  --disable-camera \
   --total-timesteps 1_000_000 \
-  --learning-rate 1e-4
+  --learning-rate 1e-4 \
+  --experiment-name intermediate_walking
 ```
 
 ### Level 2: Advanced
@@ -94,11 +100,13 @@ python training/train_rl.py \
 
 **Training command**:
 ```bash
-python training/train_rl.py \
+python training/train_ppo.py \
   --curriculum-level 2 \
-  --checkpoint outputs/level1/ppo_final_model.zip \
+  --checkpoint outputs/intermediate_walking/ppo_final_model.zip \
+  --disable-camera \
   --total-timesteps 1_000_000 \
-  --learning-rate 5e-5
+  --learning-rate 5e-5 \
+  --experiment-name advanced_walking
 ```
 
 ### Level 3: Expert
@@ -112,11 +120,13 @@ python training/train_rl.py \
 
 **Training command**:
 ```bash
-python training/train_rl.py \
+python training/train_ppo.py \
   --curriculum-level 3 \
-  --checkpoint outputs/level2/ppo_final_model.zip \
+  --checkpoint outputs/advanced_walking/ppo_final_model.zip \
+  --disable-camera \
   --total-timesteps 1_000_000 \
-  --learning-rate 5e-5
+  --learning-rate 5e-5 \
+  --experiment-name expert_walking
 ```
 
 ## Domain Randomization
@@ -185,45 +195,50 @@ def _detect_torso_fall(self):
 
 ### Option A: Standing-First Curriculum (BEST for Beginners!)
 
-**NEW APPROACH**: Learn to stand before walking - much faster convergence!
+**RECOMMENDED APPROACH**: Learn to stand → walk → advanced skills
+
+This is the **fastest and most reliable** way to train a walking robot!
 
 ```bash
-# Step 1: Standing only (15-30 min)
-python training/train_rl.py \
+# Step 1: Standing only (15-30 min) - NO CHECKPOINT
+python training/train_ppo.py \
   --curriculum-level -1 \
+  --disable-camera \
   --total-timesteps 1_000_000 \
-  --n-envs 16 \
   --experiment-name standing_only
 
-# Step 2: Basic walking (20-40 min)
-python training/train_rl.py \
+# Step 2: Basic walking (30-45 min) - LOAD STANDING CHECKPOINT
+python training/train_ppo.py \
   --curriculum-level 0 \
   --checkpoint outputs/standing_only/ppo_final_model.zip \
+  --disable-camera \
   --total-timesteps 2_000_000 \
   --learning-rate 1e-4 \
-  --n-envs 16 \
   --experiment-name basic_walking
 
-# Step 3: Initial perturbations (20-30 min)
-python training/train_rl.py \
+# Step 3: Intermediate (20-30 min) - LOAD WALKING CHECKPOINT
+python training/train_ppo.py \
   --curriculum-level 1 \
   --checkpoint outputs/basic_walking/ppo_final_model.zip \
+  --disable-camera \
   --total-timesteps 1_000_000 \
   --learning-rate 1e-4 \
   --experiment-name intermediate_walking
 
-# Step 4: Robust recovery (20-30 min)
-python training/train_rl.py \
+# Step 4: Advanced (20-30 min) - LOAD INTERMEDIATE CHECKPOINT
+python training/train_ppo.py \
   --curriculum-level 2 \
   --checkpoint outputs/intermediate_walking/ppo_final_model.zip \
+  --disable-camera \
   --total-timesteps 1_000_000 \
   --learning-rate 5e-5 \
   --experiment-name advanced_walking
 
-# Step 5: Expert performance (20-30 min)
-python training/train_rl.py \
+# Step 5: Expert (20-30 min) - LOAD ADVANCED CHECKPOINT
+python training/train_ppo.py \
   --curriculum-level 3 \
   --checkpoint outputs/advanced_walking/ppo_final_model.zip \
+  --disable-camera \
   --total-timesteps 1_000_000 \
   --learning-rate 5e-5 \
   --experiment-name expert_walking
@@ -232,27 +247,30 @@ python training/train_rl.py \
 **Total time**: ~90-150 minutes for expert-level policy
 
 **Why standing first?**
-- ✅ Faster initial learning (standing is easier than walking)
-- ✅ Better foundation for walking behaviors
-- ✅ Reduces early frustration from constant falling
-- ✅ Can verify standing works before moving to walking
+- ✅ **Faster convergence**: Standing is easier, robot learns balance quickly
+- ✅ **Better foundation**: Each level builds on previous checkpoint
+- ✅ **Progressive difficulty**: Gradual increase in challenge
+- ✅ **Less frustration**: Robot falls less when it starts with balance
 
 ---
 
 ### Option B: Direct Walking (Skip Standing)
 
-If you want to skip standing and go straight to walking:
+If you want to skip standing and go straight to walking (NOT recommended):
 
 ```bash
-python training/train_rl.py \
+python training/train_ppo.py \
   --curriculum-level 0 \
+  --disable-camera \
   --total-timesteps 2_500_000 \
-  --n-envs 16 \
   --experiment-name direct_walking
 ```
 
-**Pros**: Simpler (one step)
-**Cons**: Slower convergence, robot falls more initially
+**Pros**: Simpler (one command)
+**Cons**:
+- ⚠️ Slower convergence (no standing foundation)
+- ⚠️ Robot falls more initially
+- ⚠️ May take 50% longer to learn walking
 
 ---
 
@@ -260,42 +278,42 @@ python training/train_rl.py \
 
 Combine curriculum learning with two-phase training for fastest results:
 
-**Phase 1: Standing (no camera, fast)**
+**Phase 1: Standing (no camera, super fast)**
 ```bash
-python training/train_rl.py \
-  --disable-camera \
+python training/train_ppo.py \
   --curriculum-level -1 \
-  --total-timesteps 1_000_000 \
-  --n-envs 16 \
-  --experiment-name phase1_standing_nocam
-```
-
-**Phase 2: Walking (no camera, fast)**
-```bash
-python training/train_rl.py \
   --disable-camera \
-  --curriculum-level 0 \
-  --checkpoint outputs/phase1_standing_nocam/ppo_final_model.zip \
-  --total-timesteps 2_000_000 \
-  --n-envs 16 \
-  --learning-rate 1e-4 \
-  --experiment-name phase2_walking_nocam
+  --total-timesteps 1_000_000 \
+  --experiment-name phase1_standing
 ```
 
-**Phase 3: Visual fine-tuning + advanced curriculum**
+**Phase 2: Walking (no camera, fast) - BUILD ON STANDING**
 ```bash
-python training/train_rl.py \
-  --use-camera \
-  --camera-width 64 --camera-height 64 \
+python training/train_ppo.py \
+  --curriculum-level 0 \
+  --checkpoint outputs/phase1_standing/ppo_final_model.zip \
+  --disable-camera \
+  --total-timesteps 2_000_000 \
+  --learning-rate 1e-4 \
+  --experiment-name phase2_walking
+```
+
+**Phase 3: Visual + advanced curriculum - BUILD ON WALKING**
+```bash
+python training/train_ppo.py \
   --curriculum-level 2 \
-  --checkpoint outputs/phase2_walking_nocam/ppo_final_model.zip \
+  --checkpoint outputs/phase2_walking/ppo_final_model.zip \
+  --use-camera \
+  --camera-width 64 \
+  --camera-height 64 \
   --total-timesteps 1_500_000 \
-  --n-envs 8 \
   --learning-rate 5e-5 \
   --experiment-name phase3_visual_advanced
 ```
 
-**Total time**: ~60-100 minutes for robust visual walking policy!
+**Total time**: ~60-90 minutes for robust visual walking policy!
+
+**Key insight**: Each phase builds on the previous checkpoint!
 
 ## Monitoring Training
 
@@ -322,12 +340,14 @@ The environment now tracks:
 
 ### Robot keeps falling at higher levels
 
-**Solution**: Train longer at lower levels first
+**Solution**: Train longer at lower levels first OR check you're loading checkpoints
+
 ```bash
-# Extend Level 0 training
-python training/train_rl.py \
-  --curriculum-level 0 \
-  --total-timesteps 3_000_000  # Increased from 2M
+# Make sure you're LOADING THE CHECKPOINT from previous level!
+python training/train_ppo.py \
+  --curriculum-level 1 \
+  --checkpoint outputs/basic_walking/ppo_final_model.zip \  # IMPORTANT!
+  --total-timesteps 1_500_000  # Train longer if needed
 ```
 
 ### No falls detected (episodes run full 5000 steps)
@@ -340,16 +360,21 @@ python training/train_rl.py \
 ### Domain randomization makes training unstable
 
 **Solution**: Disable initially, enable for fine-tuning
+
 ```bash
 # Phase 1: Learn basic policy without randomization
-python training/train_rl.py \
+python training/train_ppo.py \
+  --curriculum-level 0 \
   --no-domain-randomization \
+  --disable-camera \
   --total-timesteps 2_000_000
 
-# Phase 2: Fine-tune with randomization
-python training/train_rl.py \
-  --domain-randomization \
+# Phase 2: Fine-tune with randomization for robustness
+python training/train_ppo.py \
+  --curriculum-level 1 \
   --checkpoint outputs/.../ppo_final_model.zip \
+  --domain-randomization \
+  --disable-camera \
   --learning-rate 1e-4 \
   --total-timesteps 1_000_000
 ```
