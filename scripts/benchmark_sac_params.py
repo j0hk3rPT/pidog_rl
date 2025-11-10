@@ -22,7 +22,7 @@ import sys
 import gymnasium as gym
 import numpy as np
 from stable_baselines3 import SAC
-from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import BaseCallback
 import psutil
@@ -79,7 +79,7 @@ class BenchmarkCallback(BaseCallback):
         }
 
 
-def make_env(use_camera=False, camera_width=84, camera_height=84, use_dict_obs=True):
+def make_env(rank, use_camera=False, camera_width=84, camera_height=84, use_dict_obs=True, seed=0):
     """Create environment."""
     def _init():
         env = PiDogEnv(
@@ -89,6 +89,7 @@ def make_env(use_camera=False, camera_width=84, camera_height=84, use_dict_obs=T
             use_dict_obs=use_dict_obs
         )
         env = Monitor(env)
+        env.reset(seed=seed + rank)
         return env
     return _init
 
@@ -167,8 +168,17 @@ def benchmark_config(config, args):
         use_dict_obs = True
         use_compression = False
 
-    # Create environment
-    env = DummyVecEnv([make_env(args.use_camera, args.camera_width, args.camera_height, use_dict_obs)])
+    # Create vectorized environments
+    print(f"Creating {args.n_envs} parallel environment(s)...")
+    if args.n_envs > 1:
+        env = SubprocVecEnv([
+            make_env(i, args.use_camera, args.camera_width, args.camera_height, use_dict_obs, args.seed)
+            for i in range(args.n_envs)
+        ])
+    else:
+        env = DummyVecEnv([
+            make_env(0, args.use_camera, args.camera_width, args.camera_height, use_dict_obs, args.seed)
+        ])
 
     # Policy and feature extractor configuration
     if use_compression:
@@ -191,6 +201,14 @@ def benchmark_config(config, args):
         "features_extractor_kwargs": extractor_kwargs,
     }
 
+    # Adjust gradient_steps for multiple environments
+    # With n_envs > 1, gradient_steps=-1 performs as many gradient steps as transitions collected
+    gradient_steps = config['gradient_steps']
+    if args.n_envs > 1 and gradient_steps > 0:
+        # Adjust gradient_steps proportionally to number of environments
+        gradient_steps = gradient_steps * args.n_envs
+        print(f"Adjusted gradient_steps to {gradient_steps} for {args.n_envs} parallel envs")
+
     # SAC configuration
     sac_kwargs = {
         "policy": policy_type,
@@ -200,7 +218,7 @@ def benchmark_config(config, args):
         "buffer_size": config['buffer_size'],
         "batch_size": config['batch_size'],
         "train_freq": config['train_freq'],
-        "gradient_steps": config['gradient_steps'],
+        "gradient_steps": gradient_steps,
         "learning_starts": config['learning_starts'],
         "gamma": 0.99,
         "tau": 0.005,
@@ -272,6 +290,10 @@ def main():
     parser = argparse.ArgumentParser(description="Benchmark SAC parameters")
     parser.add_argument('--timesteps', type=int, default=50_000,
                         help='Timesteps per benchmark (default: 50,000)')
+    parser.add_argument('--n-envs', type=int, default=1,
+                        help='Number of parallel environments (default: 1)')
+    parser.add_argument('--seed', type=int, default=0,
+                        help='Random seed (default: 0)')
     parser.add_argument('--use-camera', action='store_true',
                         help='Use camera observations (slower, more memory)')
     parser.add_argument('--camera-width', type=int, default=84)
@@ -297,6 +319,8 @@ def main():
     print("SAC PARAMETER BENCHMARK")
     print(f"{'='*70}")
     print(f"Timesteps per test: {args.timesteps:,}")
+    print(f"Parallel envs:      {args.n_envs}")
+    print(f"Random seed:        {args.seed}")
     print(f"Camera enabled:     {args.use_camera}")
     print(f"Compression:        {args.use_compression}")
     if args.use_compression:
@@ -317,6 +341,9 @@ def main():
     # Research shows smaller buffers (50K-100K) + larger batches (512) work BETTER for robotics
     # than standard 1M buffer defaults. Testing range: 50K-1M to validate.
     # With compression: 50K=~100MB, 100K=~200MB, 200K=~400MB, 500K=~1GB, 1M=~2GB
+    #
+    # Multiple environments: gradient_steps will be automatically scaled by n_envs
+    # e.g., gradient_steps=8 with n_envs=4 becomes 32 gradient steps per update
     all_configs = {
         'robotics-optimal': {
             'name': 'Robotics Optimal',
