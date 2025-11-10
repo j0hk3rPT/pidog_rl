@@ -221,16 +221,38 @@ def parse_args():
         default="zstd-3",
         help="Compression method for replay buffer (default: zstd-3). Options: zstd-3, zstd-5, lz4-frame/1, rle-jit, etc.",
     )
+    parser.add_argument(
+        "--domain-randomization",
+        action="store_true",
+        default=True,
+        help="Enable domain randomization (physics parameters). Default: True",
+    )
+    parser.add_argument(
+        "--no-domain-randomization",
+        action="store_false",
+        dest="domain_randomization",
+        help="Disable domain randomization",
+    )
+    parser.add_argument(
+        "--curriculum-level",
+        type=int,
+        default=0,
+        choices=[0, 1, 2, 3],
+        help="Curriculum difficulty level (0=easiest, 3=hardest). Default: 0",
+    )
     return parser.parse_args()
 
 
-def make_env(rank, seed=0, use_camera=True, camera_width=84, camera_height=84):
+def make_env(rank, seed=0, use_camera=True, camera_width=84, camera_height=84,
+             domain_randomization=True, curriculum_level=0):
     """Create a single environment instance."""
     def _init():
         env = PiDogEnv(
             use_camera=use_camera,
             camera_width=camera_width,
             camera_height=camera_height,
+            domain_randomization=domain_randomization,
+            curriculum_level=curriculum_level,
         )
         env = Monitor(env)
         env.reset(seed=seed + rank)
@@ -598,20 +620,25 @@ def main():
     print(f"\nCreating {args.n_envs} parallel environments...")
     print(f"Observation format: Box (flattened) - shape (21199,)")
     print(f"Camera: {'Enabled' if args.use_camera else 'Disabled (zeros for image)'}")
+    print(f"Domain randomization: {'Enabled' if args.domain_randomization else 'Disabled'}")
+    print(f"Curriculum level: {args.curriculum_level} (0=easiest, 3=hardest)")
 
     if args.n_envs > 1:
         env = SubprocVecEnv([
-            make_env(i, args.seed, args.use_camera, args.camera_width, args.camera_height)
+            make_env(i, args.seed, args.use_camera, args.camera_width, args.camera_height,
+                    args.domain_randomization, args.curriculum_level)
             for i in range(args.n_envs)
         ])
     else:
         env = DummyVecEnv([
-            make_env(0, args.seed, args.use_camera, args.camera_width, args.camera_height)
+            make_env(0, args.seed, args.use_camera, args.camera_width, args.camera_height,
+                    args.domain_randomization, args.curriculum_level)
         ])
 
     # Create evaluation environment
     eval_env = DummyVecEnv([
-        make_env(args.n_envs, args.seed, args.use_camera, args.camera_width, args.camera_height)
+        make_env(args.n_envs, args.seed, args.use_camera, args.camera_width, args.camera_height,
+                args.domain_randomization, args.curriculum_level)
     ])
 
     # Create or load model
