@@ -126,6 +126,24 @@ def estimate_memory_usage(buffer_size, obs_shape_image, obs_shape_vector, action
     return total_gb
 
 
+def generate_config_filename(config, args):
+    """Generate filename from config parameters."""
+    # Use key parameters in filename for easy identification
+    filename = (
+        f"sac_buffer{config['buffer_size']}_"
+        f"batch{config['batch_size']}_"
+        f"tau{config['tau']}_"
+        f"gamma{config['gamma']}_"
+        f"gradsteps{config['gradient_steps']}"
+    )
+    if args.use_compression:
+        filename += f"_compressed-{args.compression_method}"
+    if args.use_camera:
+        filename += "_camera"
+    filename += ".json"
+    return filename
+
+
 def benchmark_config(config, args):
     """Benchmark a single configuration."""
     print(f"\n{'='*70}")
@@ -429,7 +447,17 @@ def main():
         if result is not None:
             results.append(result)
 
-    # Save results
+            # Save individual config result to its own file
+            config_filename = generate_config_filename(config, args)
+            config_output_dir = Path(args.output).parent / "benchmark_results"
+            config_output_dir.mkdir(exist_ok=True)
+            config_output_path = config_output_dir / config_filename
+
+            with open(config_output_path, 'w') as f:
+                json.dump(result, f, indent=2)
+            print(f"Config result saved to {config_output_path}")
+
+    # Save summary of all results
     output_path = Path(args.output)
     with open(output_path, 'w') as f:
         json.dump(results, f, indent=2)

@@ -91,6 +91,25 @@ def make_env(rank, use_camera=False, camera_width=84, camera_height=84, seed=0):
     return _init
 
 
+def generate_config_filename(config, args):
+    """Generate filename from config parameters."""
+    # Use key parameters in filename for easy identification
+    filename = (
+        f"ppo_steps{config['n_steps']}_"
+        f"batch{config['batch_size']}_"
+        f"epochs{config['n_epochs']}_"
+        f"gae{config['gae_lambda']}_"
+        f"clip{config['clip_range']}_"
+        f"ent{config['ent_coef']}"
+    )
+    if args.use_compression:
+        filename += f"_compressed-{args.compression_method}"
+    if args.use_camera:
+        filename += "_camera"
+    filename += ".json"
+    return filename
+
+
 def run_benchmark(config, args):
     """Run a single benchmark with given configuration."""
     print(f"\n{'='*70}")
@@ -411,11 +430,21 @@ def main():
         result = run_benchmark(config, args)
         results.append(result)
 
-        # Save intermediate results
+        # Save individual config result to its own file
+        config_filename = generate_config_filename(config, args)
+        config_output_dir = Path(args.output).parent / "benchmark_results"
+        config_output_dir.mkdir(exist_ok=True)
+        config_output_path = config_output_dir / config_filename
+
+        with open(config_output_path, 'w') as f:
+            json.dump(result, f, indent=2)
+        print(f"Config result saved to {config_output_path}")
+
+        # Save summary of all results so far
         output_path = Path(args.output)
         with open(output_path, 'w') as f:
             json.dump(results, f, indent=2)
-        print(f"\nIntermediate results saved to {output_path}")
+        print(f"Summary results updated in {output_path}")
 
     # Print summary
     print(f"\n\n{'='*70}")
