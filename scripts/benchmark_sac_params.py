@@ -168,7 +168,20 @@ def benchmark_config(config, args):
         use_dict_obs = True
         use_compression = False
 
-    # Create vectorized environments
+    # CRITICAL: Initialize buffer dtypes BEFORE creating environments
+    # This is required for proper JIT compilation with sb3-extra-buffers
+    buffer_dtypes = None
+    if use_compression:
+        print(f"Initializing compression ({args.compression_method}) - this must happen BEFORE creating environments...")
+        obs_size = args.camera_height * args.camera_width * 3 + 31  # 21,199 for 84x84x3 + 31 sensors
+        buffer_dtypes = find_buffer_dtypes(
+            obs_shape=(obs_size,),
+            elem_dtype=np.float32,
+            compression_method=args.compression_method
+        )
+        print(f"✓ Compression initialized (obs_shape={obs_size})")
+
+    # Create vectorized environments AFTER initializing compression
     print(f"Creating {args.n_envs} parallel environment(s)...")
     if args.n_envs > 1:
         env = SubprocVecEnv([
@@ -189,7 +202,7 @@ def benchmark_config(config, args):
             "camera_width": args.camera_width,
             "camera_height": args.camera_height,
         }
-        print(f"Using compressed buffer ({args.compression_method})")
+        print(f"Using compressed buffer with Box observations")
     else:
         policy_type = "MultiInputPolicy"
         extractor_class = PiDogCombinedExtractor
@@ -227,18 +240,14 @@ def benchmark_config(config, args):
         "tensorboard_log": None,  # Disable for benchmarking
     }
 
-    # Add compressed buffer if enabled
+    # Add compressed buffer if enabled (buffer_dtypes already initialized earlier)
     if use_compression:
-        buffer_dtypes = find_buffer_dtypes(
-            obs_shape=(args.camera_height * args.camera_width * 3 + 31,),
-            elem_dtype=np.float32,
-            compression_method=args.compression_method
-        )
         sac_kwargs["replay_buffer_class"] = CompressedReplayBuffer
         sac_kwargs["replay_buffer_kwargs"] = {
             "dtypes": buffer_dtypes,
             "compression_method": args.compression_method,
         }
+        print(f"✓ Configured CompressedReplayBuffer with {config['buffer_size']:,} capacity")
 
     # Create model
     model = SAC(**sac_kwargs)

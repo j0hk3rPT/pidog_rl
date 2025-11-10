@@ -406,7 +406,7 @@ def pretrain_with_bc(model, transitions, args):
     return model
 
 
-def create_algorithm(algorithm_name, env, args):
+def create_algorithm(algorithm_name, env, args, buffer_dtypes=None):
     """Create RL algorithm instance."""
     # Determine if we're using compression (Box obs) or Dict obs
     use_compression = args.use_compression and algorithm_name in ["sac", "td3"]
@@ -453,19 +453,13 @@ def create_algorithm(algorithm_name, env, args):
     }
 
     # Add compression buffer for SAC/TD3 if enabled
+    # buffer_dtypes should already be initialized before creating environments
     if use_compression:
-        if not SB3_EXTRA_BUFFERS_AVAILABLE:
-            raise ImportError(
-                "Compression requested but sb3-extra-buffers not installed. "
-                "Install with: pip install 'sb3-extra-buffers[fast,extra]'"
+        if buffer_dtypes is None:
+            raise ValueError(
+                "buffer_dtypes must be initialized before creating environments! "
+                "This is a bug in the training script."
             )
-
-        # Set up compressed buffer parameters
-        buffer_dtypes = find_buffer_dtypes(
-            obs_shape=(args.camera_height * args.camera_width * 3 + 31,),
-            elem_dtype=np.float32,
-            compression_method=args.compression_method
-        )
 
         replay_buffer_kwargs = {
             "dtypes": buffer_dtypes,
@@ -474,6 +468,7 @@ def create_algorithm(algorithm_name, env, args):
 
         common_kwargs["replay_buffer_class"] = CompressedReplayBuffer
         common_kwargs["replay_buffer_kwargs"] = replay_buffer_kwargs
+        print(f"✓ Configured CompressedReplayBuffer with {args.buffer_size:,} capacity")
 
     if algorithm_name == "ppo":
         return PPO(
@@ -580,11 +575,27 @@ def main():
     print(f"Output directory: {experiment_dir}")
     print("=" * 60)
 
-    # Create vectorized environments
+    # CRITICAL: Initialize compression BEFORE creating environments
+    # This is required for proper JIT compilation with sb3-extra-buffers
+    buffer_dtypes = None
+    if use_compression:
+        if not SB3_EXTRA_BUFFERS_AVAILABLE:
+            raise ImportError(
+                "Compression requested but sb3-extra-buffers not installed. "
+                "Install with: pip install 'sb3-extra-buffers[fast,extra]'"
+            )
+        print(f"\nInitializing compression ({args.compression_method}) - this must happen BEFORE creating environments...")
+        obs_size = args.camera_height * args.camera_width * 3 + 31  # 21,199 for 84x84x3 + 31 sensors
+        buffer_dtypes = find_buffer_dtypes(
+            obs_shape=(obs_size,),
+            elem_dtype=np.float32,
+            compression_method=args.compression_method
+        )
+        print(f"✓ Compression initialized (obs_shape={obs_size}, method={args.compression_method})")
+
+    # Create vectorized environments AFTER initializing compression
     print(f"\nCreating {args.n_envs} parallel environments...")
     print(f"Observation format: {'Box (flattened)' if not use_dict_obs else 'Dict (image+vector)'}")
-    if args.use_compression:
-        print(f"Compression enabled: {args.compression_method}")
 
     if args.n_envs > 1:
         env = SubprocVecEnv([
@@ -612,7 +623,7 @@ def main():
             model = TD3.load(args.checkpoint, env=env, device=args.device)
     else:
         print(f"\nCreating new {args.algorithm.upper()} model...")
-        model = create_algorithm(args.algorithm, env, args)
+        model = create_algorithm(args.algorithm, env, args, buffer_dtypes=buffer_dtypes)
 
     # Print model info
     print(f"\nModel architecture:")
