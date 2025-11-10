@@ -118,7 +118,7 @@ class PiDogEnv(gym.Env):
         # Servo specifications (MG90S Metal Gear Servo)
         # Real hardware constraints for sim-to-real transfer
         self.servo_specs = {
-            "range": (-np.pi/2, np.pi),       # Extended range to support negative angles
+            "range": (-np.pi/2, np.pi/2),     # Extended range to support negative angles
             "max_torque": 0.216,              # Nm (at 6V)
             "min_torque": 0.176,              # Nm (at 4.8V)
             "max_speed": 7.0,                 # rad/s (400°/s at 6V) - 60°/0.15sec
@@ -129,8 +129,8 @@ class PiDogEnv(gym.Env):
         # Joint limits (extended to support found neutral angles)
         # Hip neutral: -30° (-π/6), Knee neutral: -45° (-π/4)
         self.joint_limits = {
-            "hip": (-np.pi/2, np.pi),         # -90° to 180° range
-            "knee": (-np.pi/2, np.pi),        # -90° to 180° range
+            "hip": (-np.pi/2, np.pi/2),         # -90° to 90° (180 range)
+            "knee": (-np.pi/2, np.pi/2),        # -90° to 90° (180 range)
         }
 
         # Neutral standing angles (aligned with grounded initialization)
@@ -155,7 +155,7 @@ class PiDogEnv(gym.Env):
 
         # Episode tracking
         self.step_count = 0
-        self.max_steps = 5000  # 100 seconds at 50Hz - gives more time to learn walking
+        self.max_steps = 1000  # 100 seconds at 50Hz - gives more time to learn walking
 
         # Velocity history for stationary detection
         # Track forward velocity over ~1 second (depends on frame_skip and dt)
@@ -563,11 +563,11 @@ class PiDogEnv(gym.Env):
         if self.curriculum_level < 0:
             # STANDING MODE: Simple, clear objective - minimize movement and stay near neutral
 
-            # 10a. Joint position error (want to be near neutral)
-            joint_pos = self.data.qpos[7:15]
-            neutral_positions = np.array([self.neutral_hip, self.neutral_knee] * 4)
-            pose_error_squared = np.sum(np.square(joint_pos - neutral_positions))
-            standing_pose_penalty = -1.0 * pose_error_squared
+            # # 10a. Joint position error (want to be near neutral)
+            # joint_pos = self.data.qpos[7:15]
+            # neutral_positions = np.array([self.neutral_hip, self.neutral_knee] * 4)
+            # pose_error_squared = np.sum(np.square(joint_pos - neutral_positions))
+            # standing_pose_penalty = -1.0 * pose_error_squared
 
             # 10b. Joint velocity penalty (want to be still)
             # (joint_velocities already defined in section 6c)
@@ -579,7 +579,8 @@ class PiDogEnv(gym.Env):
 
             # Combine standing rewards
             gait_quality = 0.0  # Not used in standing
-            posture_reward = standing_pose_penalty + joint_vel_penalty + base_vel_penalty
+            posture_reward = joint_vel_penalty + base_vel_penalty
+            # posture_reward = standing_pose_penalty + joint_vel_penalty + base_vel_penalty
 
         else:
             # WALKING MODE: Reward rhythmic leg movement
@@ -736,7 +737,7 @@ class PiDogEnv(gym.Env):
 
         # Start body at a higher position and let it settle to ground
         # This ensures paws make contact naturally rather than "dropping"
-        start_height = 0.18 + np.random.uniform(-0.01, 0.01)  # Start slightly higher
+        start_height = 0.0  # Start slightly higher
         self.data.qpos[2] = start_height
 
         # Randomize initial orientation slightly (curriculum-dependent)
@@ -805,7 +806,6 @@ class PiDogEnv(gym.Env):
             np.clip(joint_velocities, -self.servo_specs['max_speed'],
                    self.servo_specs['max_speed'], out=joint_velocities)
 
-        # Get observation
         obs = self._get_obs()
 
         # Compute reward

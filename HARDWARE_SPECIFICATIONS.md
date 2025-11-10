@@ -10,12 +10,6 @@ After researching the actual PiDog hardware, several discrepancies were found be
 
 ## Servo Motors
 
-### Original Simulation (PARTIALLY INCORRECT)
-- **Model**: "SunFounder SF006FM 9g Digital Servo"
-- **Torque**: 0.127-0.137 Nm (1.3-1.4 kgf·cm) @ 4.8-6V ❌ **Underestimated**
-- **Speed**: 5.8-7.0 rad/s (333-400°/s) ✓ **Correct**
-- **Status**: ❌ **This servo model does not exist** in any public documentation
-
 ### Actual Hardware (RESEARCHED)
 - **Model**: Likely **MG90S Metal Gear Servo** (or similar 9g metal gear servo)
 - **Quantity**: 12 total servos

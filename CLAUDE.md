@@ -1,1 +1,2 @@
 - Before creating a file always verify there's really needed and there's nothing similar that can be edited, Ideally we want the least ammount of files, clean uneeded stuff when you find it
+- Avoid creating new files, find other files that already exist and make sure to keep it clean

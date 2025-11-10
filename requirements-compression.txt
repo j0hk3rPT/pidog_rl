@@ -1,4 +1,0 @@
-# Optional: Compressed replay buffers for SAC/TD3
-# Enables 70-95% memory savings with image observations
-# Install with: pip install "sb3-extra-buffers[fast,extra]"
-sb3-extra-buffers[fast,extra]>=0.4.0
