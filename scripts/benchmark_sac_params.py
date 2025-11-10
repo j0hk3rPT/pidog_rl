@@ -99,7 +99,8 @@ def estimate_memory_usage(buffer_size, obs_shape_image, obs_shape_vector, action
         Estimated memory in GB
     """
     # Each transition stores: obs, next_obs, action, reward, done
-    # With optimize_memory_usage=True, next_obs is stored cleverly (50% reduction)
+    # NOTE: DictReplayBuffer does NOT support optimize_memory_usage
+    # So we store both obs and next_obs separately (full memory usage)
 
     image_bytes = np.prod(obs_shape_image) * 1  # uint8
     vector_bytes = obs_shape_vector[0] * 4  # float32
@@ -108,8 +109,8 @@ def estimate_memory_usage(buffer_size, obs_shape_image, obs_shape_vector, action
     reward_bytes = 4  # float32
     done_bytes = 1  # bool
 
-    # With optimize_memory_usage=True: obs stored once, not twice
-    bytes_per_transition = obs_bytes + action_bytes + reward_bytes + done_bytes
+    # DictReplayBuffer: stores obs AND next_obs separately (2x memory)
+    bytes_per_transition = (obs_bytes * 2) + action_bytes + reward_bytes + done_bytes
 
     total_bytes = buffer_size * bytes_per_transition
     total_gb = total_bytes / (1024 ** 3)
@@ -169,7 +170,8 @@ def benchmark_config(config, args):
         learning_starts=config['learning_starts'],
         gamma=0.99,
         tau=0.005,
-        optimize_memory_usage=True,  # CRITICAL for memory efficiency
+        # NOTE: optimize_memory_usage NOT supported with Dict observations
+        # DictReplayBuffer does not support this parameter
         verbose=1,
         device='cuda' if args.device == 'cuda' else 'cpu',
         tensorboard_log=None,  # Disable for benchmarking
@@ -253,10 +255,13 @@ def main():
     print(f"  Available: {mem_info.available / (1024**3):.1f} GB")
 
     # Define configurations to test
+    # Note: Buffer sizes optimized for Dict observations (image+vector) with 30GB RAM
+    # DictReplayBuffer stores obs+next_obs separately: ~40 bytes/transition
+    # 400K buffer = ~16GB, 500K = ~20GB, 300K = ~12GB
     all_configs = {
         'fast': {
             'name': 'Fast Training',
-            'buffer_size': 300_000,
+            'buffer_size': 300_000,  # ~12GB RAM
             'batch_size': 256,
             'train_freq': 8,
             'gradient_steps': 8,
@@ -265,7 +270,7 @@ def main():
         },
         'balanced': {
             'name': 'Balanced',
-            'buffer_size': 500_000,
+            'buffer_size': 400_000,  # ~16GB RAM (recommended)
             'batch_size': 128,
             'train_freq': 4,
             'gradient_steps': 4,
@@ -274,7 +279,7 @@ def main():
         },
         'quality': {
             'name': 'High Quality',
-            'buffer_size': 1_000_000,
+            'buffer_size': 500_000,  # ~20GB RAM (max safe)
             'batch_size': 256,
             'train_freq': 1,
             'gradient_steps': 1,
@@ -283,16 +288,16 @@ def main():
         },
         'memory-efficient': {
             'name': 'Memory Efficient',
-            'buffer_size': 200_000,
+            'buffer_size': 200_000,  # ~8GB RAM
             'batch_size': 64,
             'train_freq': 4,
             'gradient_steps': 4,
             'learning_starts': 1000,
-            'description': 'Minimal memory footprint'
+            'description': 'Minimal memory footprint (~8GB)'
         },
         'aggressive': {
             'name': 'Aggressive Training',
-            'buffer_size': 500_000,
+            'buffer_size': 400_000,  # ~16GB RAM
             'batch_size': 512,
             'train_freq': 16,
             'gradient_steps': 16,

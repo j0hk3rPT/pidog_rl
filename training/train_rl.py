@@ -90,8 +90,8 @@ def parse_args():
     parser.add_argument(
         "--buffer-size",
         type=int,
-        default=1_000_000,
-        help="Replay buffer size (for SAC/TD3)",
+        default=400_000,
+        help="Replay buffer size (for SAC/TD3). Default 400K fits in 30GB RAM with Dict observations (image+vector). Use 500K for max capacity or 300K for more headroom.",
     )
     parser.add_argument(
         "--save-freq",
@@ -434,7 +434,8 @@ def create_algorithm(algorithm_name, env, args):
             train_freq=args.train_freq,
             gradient_steps=args.gradient_steps,
             buffer_size=args.buffer_size,
-            optimize_memory_usage=True,  # Reduces memory by ~50% for image observations
+            # Note: optimize_memory_usage NOT supported with Dict observations (DictReplayBuffer)
+            # With Dict obs (image+vector): 400K buffer uses ~16GB, 500K uses ~20GB
             **common_kwargs,
         )
     elif algorithm_name == "td3":
@@ -448,7 +449,8 @@ def create_algorithm(algorithm_name, env, args):
             train_freq=args.train_freq,
             gradient_steps=args.gradient_steps,
             buffer_size=args.buffer_size,
-            optimize_memory_usage=True,  # Reduces memory by ~50% for image observations
+            # Note: optimize_memory_usage NOT supported with Dict observations (DictReplayBuffer)
+            # With Dict obs (image+vector): 400K buffer uses ~16GB, 500K uses ~20GB
             **common_kwargs,
         )
     else:
