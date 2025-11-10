@@ -128,9 +128,10 @@ python training/train_rl.py --no-domain-randomization
 **Problem**: Robot never learned to recover from tilts
 
 ### New Approach (Current)
-- Only terminates when: **Torso contact force > 1.0N**
+- Only terminates when: **Torso touches ground**
 
 **Benefits**:
+- Simple and reliable detection
 - Robot can recover from large tilts
 - Learns robust balancing behaviors
 - Natural curriculum: Easy poses → harder poses
@@ -140,15 +141,15 @@ python training/train_rl.py --no-domain-randomization
 
 ```python
 # In pidog_env.py:
-def _detect_torso_fall(self, force_threshold=1.0):
-    """Detect actual fall based on contact force on torso/body."""
-    # Checks contact forces on:
+def _detect_torso_fall(self):
+    """Detect actual fall: torso/body touching ground."""
+    # Checks if any torso geom is in contact with ground:
     # - chest_c0, chest_c1, chest_c2
     # - torso_left_c0, torso_left_c1, torso_left_c2
     # - torso_right_c0, torso_right_c1, torso_right_c2
     # - body_c0, body_c1, body_c2
 
-    # If force > 1.0N on any torso geom → FALL
+    # If torso touches ground → FALL
     # Otherwise → Keep going, learn to recover!
 ```
 
@@ -264,14 +265,12 @@ python training/train_rl.py \
   --total-timesteps 3_000_000  # Increased from 2M
 ```
 
-### No falls detected (episodes never terminate)
+### No falls detected (episodes run full 5000 steps)
 
-**Check**: Contact force threshold might be too high
-- Default: 1.0N
-- For more sensitive detection, modify `pidog_env.py`:
-  ```python
-  is_fallen, contact_force = self._detect_torso_fall(force_threshold=0.5)
-  ```
+**Check**: Verify torso geoms exist in your model
+- Run with debug logging to see if contacts are being detected
+- Check that geom names match in your MJCF model:
+  - `chest_c0`, `torso_left_c0`, `body_c0`, etc.
 
 ### Domain randomization makes training unstable
 
