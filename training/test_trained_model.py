@@ -48,14 +48,14 @@ def parse_args():
     parser.add_argument(
         "--camera-width",
         type=int,
-        default=64,
-        help="Camera image width",
+        default=84,
+        help="Camera image width (default: 84, matches training default)",
     )
     parser.add_argument(
         "--camera-height",
         type=int,
-        default=64,
-        help="Camera image height",
+        default=84,
+        help="Camera image height (default: 84, matches training default)",
     )
     parser.add_argument(
         "--use-compression",
