@@ -245,6 +245,41 @@ class PiDogEnv(gym.Env):
 
         return leg_collision_count
 
+    def _detect_belly_touch(self) -> bool:
+        """
+        Detect if belly/chest touches the ground.
+
+        Returns:
+            True if belly is touching ground, False otherwise
+        """
+        # Get ground geom ID
+        ground_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'ground')
+
+        # Body geom names that indicate belly/chest contact
+        belly_geom_names = ['chest_c0', 'chest_c1', 'chest_c2',
+                            'torso_left_c0', 'torso_left_c1', 'torso_left_c2',
+                            'torso_right_c0', 'torso_right_c1', 'torso_right_c2']
+
+        # Get belly geom IDs
+        belly_geom_ids = []
+        for name in belly_geom_names:
+            geom_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, name)
+            if geom_id >= 0:
+                belly_geom_ids.append(geom_id)
+
+        # Check all active contacts
+        for i in range(self.data.ncon):
+            contact = self.data.contact[i]
+            geom1 = contact.geom1
+            geom2 = contact.geom2
+
+            # Check if belly geom is touching ground
+            if (geom1 == ground_id and geom2 in belly_geom_ids) or \
+               (geom2 == ground_id and geom1 in belly_geom_ids):
+                return True
+
+        return False
+
     def _get_obs(self):
         """Get current observation with camera and all sensors.
 
@@ -397,30 +432,45 @@ class PiDogEnv(gym.Env):
         lateral_penalty = -0.5 * lateral_vel
 
 
-        # ============= 7. LEG SELF-COLLISION PENALTY (NEW!) =============
+        # ============= 7. LEG SELF-COLLISION PENALTY =============
         # Penalize when legs collide with each other (unnatural gait)
         leg_collisions = self._detect_leg_collisions()
         collision_penalty = -2.0 * leg_collisions  # -2.0 per collision
 
 
-        # ============= 8. HEIGHT MAINTENANCE (RE-ADDED!) =============
-        # Penalize deviation from standing height - prevents crouching/lowering
-        body_height = self.data.qpos[2]
-        target_height = 0.14  # Standing height from reset
-        height_penalty = -2.0 * abs(body_height - target_height)
+        # ============= 8. SURVIVAL BONUS =============
+        # Reward for staying alive and not falling
+        # At 50Hz, this adds +5.0 per second of stable operation
+        survival_bonus = 0.1
+
+
+        # ============= 9. GAIT QUALITY REWARD =============
+        # Reward rhythmic leg movement (proper walking has coordinated leg patterns)
+        joint_velocities = self.data.qvel[6:14]  # 8 leg joints
+        leg_vel_variance = np.var(joint_velocities)
+
+        # Good gait has moderate variance (legs moving at different speeds rhythmically)
+        # Too low = frozen/stationary, too high = flailing/chaotic
+        gait_quality = 0.0
+        if 0.5 < leg_vel_variance < 3.0:  # Sweet spot for coordinated movement
+            gait_quality = 1.0
+        elif 0.2 < leg_vel_variance < 5.0:  # Acceptable range
+            gait_quality = 0.5
 
 
         # ============= COMBINE ALL REWARDS =============
         reward = (
-            3.0 * velocity_reward +      # Forward speed (PRIMARY - 50%)
-            1.0 * obstacle_penalty +     # Avoid obstacles (CRITICAL - 20%)
-            1.5 * upright_reward +       # Stay balanced (IMPORTANT - 20%)
-            1.0 * stationary_penalty +   # Don't get stuck (IMPORTANT - 10%)
-            1.0 * height_penalty +       # Maintain standing height (IMPORTANT)
+            2.0 * velocity_reward +      # Forward speed (reduced from 3.0)
+            1.0 * obstacle_penalty +     # Avoid obstacles
+            2.0 * upright_reward +       # Stay balanced (increased from 1.5)
+            1.0 * stationary_penalty +   # Don't get stuck
+            1.0 * survival_bonus +       # Reward staying alive (NEW!)
+            1.0 * gait_quality +         # Reward coordinated leg movement (NEW!)
             action_penalty +             # Be efficient
             lateral_penalty +            # Walk straight
-            collision_penalty            # Avoid leg collisions (NEW!)
+            collision_penalty            # Avoid leg collisions
         )
+        # Note: Removed height_penalty - now using belly touch for termination instead
 
         return reward
 
@@ -429,18 +479,23 @@ class PiDogEnv(gym.Env):
         Check if episode should terminate (fall detection).
 
         COMPLETE FAILURE conditions:
-        1. Robot falls to the side (roll/pitch too high)
-        2. Robot body touches ground (height too low)
-        3. Robot flips upside down
+        1. Belly/chest touches ground (lying down/fallen forward)
+        2. Robot falls to the side (roll/pitch too high)
+        3. Robot body touches ground (height too low - extreme fall)
+        4. Robot flips upside down
         """
         body_height = self.data.qpos[2]
         body_quat = self.data.qpos[3:7]  # MuJoCo format: [w, x, y, z]
 
-        # 1. Body touching ground - COMPLETE FAILURE
+        # 1. Belly touching ground - COMPLETE FAILURE (NEW!)
+        if self._detect_belly_touch():
+            return True
+
+        # 2. Body touching ground (extreme fall) - COMPLETE FAILURE
         if body_height < 0.05:
             return True
 
-        # 2. Fallen to the side - COMPLETE FAILURE
+        # 3. Fallen to the side - COMPLETE FAILURE
         # Quaternion w-component indicates upright orientation
         # w = 1.0 means perfectly upright
         # w = 0.0 means 90° tilt (on its side)
@@ -449,7 +504,7 @@ class PiDogEnv(gym.Env):
         if quat_w < 0.5:
             return True
 
-        # 3. Additional check: using roll and pitch from quaternion
+        # 4. Additional check: using roll and pitch from quaternion
         # Calculate roll and pitch to detect side falls more accurately
         # Extract components: w=body_quat[0], x=body_quat[1], y=body_quat[2], z=body_quat[3]
         w, x, y, z = body_quat
