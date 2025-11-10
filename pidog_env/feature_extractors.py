@@ -309,3 +309,125 @@ class PiDogNatureCNNExtractor(BaseFeaturesExtractor):
 
         combined = torch.cat([cnn_features, mlp_features], dim=1)
         return self.fusion(combined)
+
+
+class PiDogFlattenedExtractor(BaseFeaturesExtractor):
+    """
+    Feature extractor for flattened Box observations (for use with compression).
+
+    Takes a single flattened array containing image + vector data,
+    splits it, and processes with CNN + MLP like PiDogCombinedExtractor.
+
+    Input format:
+    - Flattened image (84*84*3 = 21,168 values, normalized float32 [0,1])
+    - Vector data (31 values, float32)
+    - Total: 21,199 dimensions
+
+    This allows using compressed replay buffers from sb3-extra-buffers
+    while maintaining the same architecture as Dict observations.
+    """
+
+    def __init__(self, observation_space: spaces.Box, features_dim: int = 256,
+                 camera_width: int = 84, camera_height: int = 84):
+        """
+        Initialize the flattened feature extractor.
+
+        Args:
+            observation_space: Box observation space with shape (21199,)
+            features_dim: Dimension of final output features (default: 256)
+            camera_width: Width of camera image (default: 84)
+            camera_height: Height of camera image (default: 84)
+        """
+        super().__init__(observation_space, features_dim)
+
+        # Calculate split indices
+        self.camera_width = camera_width
+        self.camera_height = camera_height
+        self.image_dim = camera_width * camera_height * 3  # 21,168
+        self.vector_dim = 31
+
+        # Validate observation space
+        expected_dim = self.image_dim + self.vector_dim
+        if observation_space.shape[0] != expected_dim:
+            raise ValueError(
+                f"Expected observation space of {expected_dim} dimensions, "
+                f"got {observation_space.shape[0]}"
+            )
+
+        # =============== CNN Branch for Image Processing ===============
+        self.cnn = nn.Sequential(
+            # Conv layer 1: 3x84x84 → 32x20x20
+            nn.Conv2d(3, 32, kernel_size=8, stride=4, padding=0),
+            nn.ReLU(),
+
+            # Conv layer 2: 32x20x20 → 64x9x9
+            nn.Conv2d(32, 64, kernel_size=4, stride=2, padding=0),
+            nn.ReLU(),
+
+            # Conv layer 3: 64x9x9 → 64x7x7
+            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=0),
+            nn.ReLU(),
+
+            # Flatten: 64x7x7 → 3136
+            nn.Flatten(),
+        )
+
+        # Calculate CNN output dimension
+        with torch.no_grad():
+            sample_image = torch.zeros(1, 3, camera_height, camera_width)
+            cnn_output_dim = self.cnn(sample_image).shape[1]
+
+        # CNN feature compression: 3136 → 512
+        self.cnn_fc = nn.Sequential(
+            nn.Linear(cnn_output_dim, 512),
+            nn.ReLU(),
+        )
+
+        # =============== MLP Branch for Vector Processing ===============
+        self.mlp = nn.Sequential(
+            nn.Linear(self.vector_dim, 128),
+            nn.ReLU(),
+            nn.Linear(128, 128),
+            nn.ReLU(),
+        )
+
+        # =============== Fusion Layer ===============
+        combined_dim = 512 + 128  # 640
+        self.fusion = nn.Sequential(
+            nn.Linear(combined_dim, features_dim),
+            nn.ReLU(),
+        )
+
+    def forward(self, observations: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass through the flattened extractor.
+
+        Args:
+            observations: Flattened tensor of shape (batch, 21199)
+
+        Returns:
+            Combined feature tensor of shape (batch, features_dim)
+        """
+        # Split observations into image and vector parts
+        image_flat = observations[:, :self.image_dim]  # (batch, 21168)
+        vector = observations[:, self.image_dim:]      # (batch, 31)
+
+        # Reshape image: (batch, 21168) → (batch, 84, 84, 3) → (batch, 3, 84, 84)
+        batch_size = observations.shape[0]
+        image = image_flat.view(batch_size, self.camera_height, self.camera_width, 3)
+        image = image.permute(0, 3, 1, 2)  # HWC → CHW
+
+        # Image is already normalized to [0, 1] in the environment
+
+        # Process image through CNN
+        cnn_features = self.cnn(image)
+        cnn_features = self.cnn_fc(cnn_features)  # → (batch, 512)
+
+        # Process vector through MLP
+        mlp_features = self.mlp(vector)  # → (batch, 128)
+
+        # Concatenate and fuse
+        combined = torch.cat([cnn_features, mlp_features], dim=1)  # → (batch, 640)
+        output = self.fusion(combined)  # → (batch, features_dim)
+
+        return output

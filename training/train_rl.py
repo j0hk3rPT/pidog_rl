@@ -23,7 +23,11 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from pidog_env import PiDogEnv
-from pidog_env.feature_extractors import PiDogCombinedExtractor, PiDogNatureCNNExtractor
+from pidog_env.feature_extractors import (
+    PiDogCombinedExtractor,
+    PiDogNatureCNNExtractor,
+    PiDogFlattenedExtractor,
+)
 
 # Try to import imitation for BC pretraining
 try:
@@ -33,6 +37,15 @@ try:
 except ImportError:
     IMITATION_AVAILABLE = False
     print("Warning: 'imitation' package not available, BC pretraining disabled")
+
+# Try to import sb3-extra-buffers for compression
+try:
+    from sb3_extra_buffers.compressed import CompressedReplayBuffer, find_buffer_dtypes
+    SB3_EXTRA_BUFFERS_AVAILABLE = True
+except ImportError:
+    SB3_EXTRA_BUFFERS_AVAILABLE = False
+    print("Info: 'sb3-extra-buffers' not available, compression disabled"
+          " (install with: pip install 'sb3-extra-buffers[fast,extra]')")
 
 
 def parse_args():
@@ -197,16 +210,28 @@ def parse_args():
         default="trot_forward",
         help="Specific gait to use from demos (or 'all')",
     )
+    parser.add_argument(
+        "--use-compression",
+        action="store_true",
+        help="Use compressed replay buffer (requires sb3-extra-buffers). Enables 70-95%% memory savings for SAC/TD3.",
+    )
+    parser.add_argument(
+        "--compression-method",
+        type=str,
+        default="zstd-3",
+        help="Compression method for replay buffer (default: zstd-3). Options: zstd-3, zstd-5, lz4-frame/1, rle-jit, etc.",
+    )
     return parser.parse_args()
 
 
-def make_env(rank, seed=0, use_camera=True, camera_width=84, camera_height=84):
+def make_env(rank, seed=0, use_camera=True, camera_width=84, camera_height=84, use_dict_obs=True):
     """Create a single environment instance."""
     def _init():
         env = PiDogEnv(
             use_camera=use_camera,
             camera_width=camera_width,
-            camera_height=camera_height
+            camera_height=camera_height,
+            use_dict_obs=use_dict_obs
         )
         env = Monitor(env)
         env.reset(seed=seed + rank)
@@ -383,20 +408,35 @@ def pretrain_with_bc(model, transitions, args):
 
 def create_algorithm(algorithm_name, env, args):
     """Create RL algorithm instance."""
-    # Always use MultiInputPolicy for compatibility across training stages
-    policy_type = "MultiInputPolicy"
+    # Determine if we're using compression (Box obs) or Dict obs
+    use_compression = args.use_compression and algorithm_name in ["sac", "td3"]
 
-    # Select feature extractor architecture
-    if args.use_nature_cnn:
-        extractor_class = PiDogNatureCNNExtractor
-        print("Using Nature DQN architecture (deeper CNN)")
+    if use_compression:
+        # Using flattened Box observations for compression
+        policy_type = "CnnPolicy"
+        extractor_class = PiDogFlattenedExtractor
+        extractor_kwargs = {
+            "features_dim": args.features_dim,
+            "camera_width": args.camera_width,
+            "camera_height": args.camera_height,
+        }
+        print(f"Using compressed replay buffer with {args.compression_method}")
+        print(f"Using PiDogFlattenedExtractor (Box observations)")
     else:
-        extractor_class = PiDogCombinedExtractor
-        print("Using standard combined CNN+MLP architecture")
+        # Using Dict observations (original format)
+        policy_type = "MultiInputPolicy"
+        if args.use_nature_cnn:
+            extractor_class = PiDogNatureCNNExtractor
+            print("Using Nature DQN architecture (deeper CNN)")
+        else:
+            extractor_class = PiDogCombinedExtractor
+            print("Using standard combined CNN+MLP architecture")
+        extractor_kwargs = {"features_dim": args.features_dim}
+        print("Using Dict observations (no compression)")
 
     policy_kwargs = {
         "features_extractor_class": extractor_class,
-        "features_extractor_kwargs": {"features_dim": args.features_dim},
+        "features_extractor_kwargs": extractor_kwargs,
     }
 
     if not args.use_camera:
@@ -412,6 +452,29 @@ def create_algorithm(algorithm_name, env, args):
         "seed": args.seed,
     }
 
+    # Add compression buffer for SAC/TD3 if enabled
+    if use_compression:
+        if not SB3_EXTRA_BUFFERS_AVAILABLE:
+            raise ImportError(
+                "Compression requested but sb3-extra-buffers not installed. "
+                "Install with: pip install 'sb3-extra-buffers[fast,extra]'"
+            )
+
+        # Set up compressed buffer parameters
+        buffer_dtypes = find_buffer_dtypes(
+            obs_shape=(args.camera_height * args.camera_width * 3 + 31,),
+            elem_dtype=np.float32,
+            compression_method=args.compression_method
+        )
+
+        replay_buffer_kwargs = {
+            "dtypes": buffer_dtypes,
+            "compression_method": args.compression_method,
+        }
+
+        common_kwargs["replay_buffer_class"] = CompressedReplayBuffer
+        common_kwargs["replay_buffer_kwargs"] = replay_buffer_kwargs
+
     if algorithm_name == "ppo":
         return PPO(
             policy_type,
@@ -425,34 +488,42 @@ def create_algorithm(algorithm_name, env, args):
             **common_kwargs,
         )
     elif algorithm_name == "sac":
-        return SAC(
-            policy_type,
-            batch_size=args.batch_size,
-            gamma=0.99,
-            tau=0.005,
-            learning_starts=1000,
-            train_freq=args.train_freq,
-            gradient_steps=args.gradient_steps,
-            buffer_size=args.buffer_size,
-            # Note: optimize_memory_usage NOT supported with Dict observations (DictReplayBuffer)
-            # With Dict obs (image+vector): 400K buffer uses ~16GB, 500K uses ~20GB
-            **common_kwargs,
-        )
+        sac_kwargs = {
+            "batch_size": args.batch_size,
+            "gamma": 0.99,
+            "tau": 0.005,
+            "learning_starts": 1000,
+            "train_freq": args.train_freq,
+            "gradient_steps": args.gradient_steps,
+            "buffer_size": args.buffer_size,
+        }
+        if use_compression:
+            # With compression: Can use larger buffer (e.g., 1M)
+            # Estimated memory: 1M * ~42KB/transition * 0.05 (zstd-3) ≈ 2GB
+            print(f"Estimated compressed buffer memory: ~{args.buffer_size * 0.00004:.1f}GB")
+        else:
+            # Without compression (Dict obs): Limited buffer size
+            # 400K * ~42KB/transition ≈ 16GB
+            print(f"Uncompressed buffer memory: ~{args.buffer_size * 0.00004:.1f}GB")
+
+        return SAC(policy_type, **sac_kwargs, **common_kwargs)
     elif algorithm_name == "td3":
-        return TD3(
-            policy_type,
-            batch_size=args.batch_size,
-            gamma=0.99,
-            tau=0.005,
-            learning_starts=1000,
-            policy_delay=2,
-            train_freq=args.train_freq,
-            gradient_steps=args.gradient_steps,
-            buffer_size=args.buffer_size,
-            # Note: optimize_memory_usage NOT supported with Dict observations (DictReplayBuffer)
-            # With Dict obs (image+vector): 400K buffer uses ~16GB, 500K uses ~20GB
-            **common_kwargs,
-        )
+        td3_kwargs = {
+            "batch_size": args.batch_size,
+            "gamma": 0.99,
+            "tau": 0.005,
+            "learning_starts": 1000,
+            "policy_delay": 2,
+            "train_freq": args.train_freq,
+            "gradient_steps": args.gradient_steps,
+            "buffer_size": args.buffer_size,
+        }
+        if use_compression:
+            print(f"Estimated compressed buffer memory: ~{args.buffer_size * 0.00004:.1f}GB")
+        else:
+            print(f"Uncompressed buffer memory: ~{args.buffer_size * 0.00004:.1f}GB")
+
+        return TD3(policy_type, **td3_kwargs, **common_kwargs)
     else:
         raise ValueError(f"Unknown algorithm: {algorithm_name}")
 
@@ -464,6 +535,19 @@ def main():
     # Handle camera flags (disable takes precedence)
     if args.disable_camera:
         args.use_camera = False
+
+    # Handle compression flags
+    # Compression requires Box observations (flattened)
+    use_dict_obs = not (args.use_compression and args.algorithm in ["sac", "td3"])
+
+    if args.use_compression and args.algorithm not in ["sac", "td3"]:
+        print(f"Warning: Compression only supported for SAC/TD3, ignoring --use-compression for {args.algorithm}")
+
+    if args.use_compression and not SB3_EXTRA_BUFFERS_AVAILABLE:
+        raise ImportError(
+            "Compression requested but sb3-extra-buffers not installed. "
+            "Install with: pip install 'sb3-extra-buffers[fast,extra]'"
+        )
 
     # Set up experiment directory
     if args.experiment_name is None:
@@ -498,19 +582,23 @@ def main():
 
     # Create vectorized environments
     print(f"\nCreating {args.n_envs} parallel environments...")
+    print(f"Observation format: {'Box (flattened)' if not use_dict_obs else 'Dict (image+vector)'}")
+    if args.use_compression:
+        print(f"Compression enabled: {args.compression_method}")
+
     if args.n_envs > 1:
         env = SubprocVecEnv([
-            make_env(i, args.seed, args.use_camera, args.camera_width, args.camera_height)
+            make_env(i, args.seed, args.use_camera, args.camera_width, args.camera_height, use_dict_obs)
             for i in range(args.n_envs)
         ])
     else:
         env = DummyVecEnv([
-            make_env(0, args.seed, args.use_camera, args.camera_width, args.camera_height)
+            make_env(0, args.seed, args.use_camera, args.camera_width, args.camera_height, use_dict_obs)
         ])
 
     # Create evaluation environment
     eval_env = DummyVecEnv([
-        make_env(args.n_envs, args.seed, args.use_camera, args.camera_width, args.camera_height)
+        make_env(args.n_envs, args.seed, args.use_camera, args.camera_width, args.camera_height, use_dict_obs)
     ])
 
     # Create or load model

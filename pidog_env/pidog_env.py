@@ -41,8 +41,11 @@ class PiDogEnv(gym.Env):
 
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 30}
 
-    def __init__(self, render_mode=None, xml_path=None, use_camera=True, camera_width=84, camera_height=84):
+    def __init__(self, render_mode=None, xml_path=None, use_camera=True, camera_width=84, camera_height=84, use_dict_obs=True):
         super().__init__()
+
+        # Observation space format
+        self.use_dict_obs = use_dict_obs
 
         # Set up paths
         if xml_path is None:
@@ -83,24 +86,37 @@ class PiDogEnv(gym.Env):
         # Define observation and action spaces
         # Vector observation: joint pos (8) + joint vel (8) + quat (4) + lin_vel (3) +
         #                     ang_vel (3) + height (1) + ultrasonic (1) + accel (3) = 31
-        vector_obs_dim = 8 + 8 + 4 + 3 + 3 + 1 + 1 + 3  # = 31
+        self.vector_obs_dim = 8 + 8 + 4 + 3 + 3 + 1 + 1 + 3  # = 31
+        self.image_obs_dim = camera_height * camera_width * 3  # Flattened image size
 
-        # Always use Dict observation space for policy compatibility
-        # When camera is disabled, image will be filled with zeros
-        self.observation_space = spaces.Dict({
-            "image": spaces.Box(
-                low=0,
-                high=255,
-                shape=(camera_height, camera_width, 3),
-                dtype=np.uint8
-            ),
-            "vector": spaces.Box(
+        if self.use_dict_obs:
+            # Dict observation space (original format)
+            # When camera is disabled, image will be filled with zeros
+            self.observation_space = spaces.Dict({
+                "image": spaces.Box(
+                    low=0,
+                    high=255,
+                    shape=(camera_height, camera_width, 3),
+                    dtype=np.uint8
+                ),
+                "vector": spaces.Box(
+                    low=-np.inf,
+                    high=np.inf,
+                    shape=(self.vector_obs_dim,),
+                    dtype=np.float32
+                )
+            })
+        else:
+            # Flattened Box observation space (for compression)
+            # Image (flattened) + vector, all as float32
+            # Total: 84*84*3 + 31 = 21,168 + 31 = 21,199
+            obs_dim = self.image_obs_dim + self.vector_obs_dim
+            self.observation_space = spaces.Box(
                 low=-np.inf,
                 high=np.inf,
-                shape=(vector_obs_dim,),
+                shape=(obs_dim,),
                 dtype=np.float32
             )
-        })
 
         # Action: target joint positions for 8 leg joints
         # Normalized to [-1, 1], will be scaled to actual joint limits
@@ -246,8 +262,12 @@ class PiDogEnv(gym.Env):
 
         return leg_collision_count
 
-    def _get_obs(self) -> Dict[str, np.ndarray]:
-        """Get current observation with camera and all sensors."""
+    def _get_obs(self):
+        """Get current observation with camera and all sensors.
+
+        Returns:
+            Dict or np.ndarray depending on use_dict_obs flag
+        """
         # Joint positions (first 8 actuated joints)
         joint_pos = self.data.qpos[7:15].copy()  # Skip free joint (first 7 DOF)
 
@@ -287,11 +307,18 @@ class PiDogEnv(gym.Env):
         # Get camera image (or zeros if camera disabled)
         camera_obs = self._get_camera_obs()
 
-        # Always return dict observation for policy compatibility
-        return {
-            "image": camera_obs,
-            "vector": vector_obs
-        }
+        if self.use_dict_obs:
+            # Return dict observation (original format)
+            return {
+                "image": camera_obs,
+                "vector": vector_obs
+            }
+        else:
+            # Return flattened Box observation (for compression)
+            # Flatten image and concatenate with vector, all as float32
+            image_flat = camera_obs.flatten().astype(np.float32) / 255.0  # Normalize to [0, 1]
+            flattened_obs = np.concatenate([image_flat, vector_obs])
+            return flattened_obs
 
     def _scale_action(self, action):
         """
