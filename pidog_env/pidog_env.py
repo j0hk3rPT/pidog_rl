@@ -133,9 +133,11 @@ class PiDogEnv(gym.Env):
             "knee": (-np.pi/2, np.pi),        # -90° to 180° range
         }
 
-        # Neutral standing angles (found by systematic search)
-        self.neutral_hip = -np.pi / 6     # -30°
-        self.neutral_knee = -np.pi / 4    # -45°
+        # Neutral standing angles (aligned with grounded initialization)
+        # Starting from 0° (straight legs) and letting robot find stable pose
+        self.neutral_hip = 0.0      # 0° - straight hip
+        self.neutral_knee = 0.0     # 0° - straight knee
+        # Note: Robot will learn optimal standing pose through training
 
         # Previous action for velocity limiting
         self.prev_action = None
@@ -723,21 +725,19 @@ class PiDogEnv(gym.Env):
         # Apply domain randomization
         self._apply_domain_randomization()
 
-        # Randomize initial joint positions slightly around neutral
-        # Use correct neutral angles: hip=-30°, knee=-45°
-        # Variation increases with curriculum level
-        joint_noise = 0.1 * (1.0 + 0.5 * self.curriculum_level)
+        # IMPROVED INITIALIZATION: Start with paws on ground
+        # Set joints to 0° (or small angles) and let robot settle naturally
+        joint_noise = 0.05 * (1.0 + 0.5 * self.curriculum_level)
         for i in range(4):  # 4 legs
-            # Hip joints (even indices)
-            self.data.qpos[7 + i*2] = self.neutral_hip + np.random.uniform(-joint_noise, joint_noise)
-            # Knee joints (odd indices)
-            self.data.qpos[7 + i*2 + 1] = self.neutral_knee + np.random.uniform(-joint_noise, joint_noise)
+            # Start joints near 0° for natural standing pose
+            # Add small noise for curriculum diversity
+            self.data.qpos[7 + i*2] = np.random.uniform(-joint_noise, joint_noise)      # Hip ~0°
+            self.data.qpos[7 + i*2 + 1] = np.random.uniform(-joint_noise, joint_noise)  # Knee ~0°
 
-        # Set body to target height with randomization (±10%)
-        # Higher curriculum = more variation
-        height_base = 0.14
-        height_variation = 0.02 * (1.0 + 0.5 * self.curriculum_level)
-        self.data.qpos[2] = height_base + np.random.uniform(-height_variation, height_variation)
+        # Start body at a higher position and let it settle to ground
+        # This ensures paws make contact naturally rather than "dropping"
+        start_height = 0.18 + np.random.uniform(-0.01, 0.01)  # Start slightly higher
+        self.data.qpos[2] = start_height
 
         # Randomize initial orientation slightly (curriculum-dependent)
         if self.curriculum_level >= 1:
@@ -752,7 +752,16 @@ class PiDogEnv(gym.Env):
             # Normalize quaternion
             self.data.qpos[3:7] /= np.linalg.norm(self.data.qpos[3:7])
 
-        # Forward the simulation to settle
+        # Let robot settle to ground naturally with paws making contact
+        # Run simulation steps with zero control (gravity pulls it down)
+        # This prevents the "drop" effect and ensures stable ground contact
+        settle_steps = 50  # ~0.5 seconds of settling at 50Hz
+        for _ in range(settle_steps):
+            # Zero control during settling (servos relaxed)
+            self.data.ctrl[:] = 0.0
+            mujoco.mj_step(self.model, self.data)
+
+        # Final forward pass to ensure consistent state
         mujoco.mj_forward(self.model, self.data)
 
         # Reset action tracking for velocity limiting
