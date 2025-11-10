@@ -414,26 +414,39 @@ class PiDogEnv(gym.Env):
         """
         Compute reward based on current state.
 
-        REWARD STRUCTURE:
-        1. Forward velocity (MAIN GOAL) - high weight
+        REWARD STRUCTURE (varies by curriculum):
+        - Level -1 (Standing): Focus on balance, no forward motion required
+        - Level 0+ (Walking): Progressive forward velocity requirements
+
+        Components:
+        1. Forward velocity / Standing reward - curriculum dependent
         2. Obstacle avoidance using ultrasonic - critical for safety
         3. Upright stability - important for not falling
         4. Fall penalty - ONLY for actual falls (torso touching ground)
-        5. Stationary penalty - must keep moving
+        5. Stationary penalty (disabled for standing mode)
         6. Energy efficiency - smooth movements
         7. Lateral stability - walk straight
         8. Leg collision penalty - avoid unnatural gaits
         """
         forward_vel = self.data.qvel[0]
 
-        # ============= 1. FORWARD VELOCITY REWARD (MAIN GOAL) =============
-        # Reward positive forward velocity, penalize backward/stopped
-        velocity_reward = forward_vel
+        # ============= 1. FORWARD VELOCITY / STANDING REWARD =============
+        if self.curriculum_level < 0:
+            # STANDING MODE: Reward staying still and balanced
+            # Penalize movement, reward stillness
+            velocity_reward = -2.0 * abs(forward_vel)  # Penalize any movement
 
-        # Bonus for reaching target speed (adjusted by curriculum)
-        target_vel = self.target_forward_velocity * (1.0 + 0.2 * self.curriculum_level)
-        if forward_vel >= target_vel:
-            velocity_reward += 1.0
+            # Bonus for staying nearly still
+            if abs(forward_vel) < 0.05:  # Less than 5 cm/s
+                velocity_reward += 2.0  # Big reward for standing still
+        else:
+            # WALKING MODE: Reward forward velocity
+            velocity_reward = forward_vel
+
+            # Bonus for reaching target speed (adjusted by curriculum)
+            target_vel = self.target_forward_velocity * (1.0 + 0.2 * self.curriculum_level)
+            if forward_vel >= target_vel:
+                velocity_reward += 1.0
 
 
         # ============= 2. OBSTACLE AVOIDANCE (ULTRASONIC SENSOR) =============
@@ -468,14 +481,15 @@ class PiDogEnv(gym.Env):
             self._has_fallen = False
 
 
-        # ============= 5. STATIONARY PENALTY =============
+        # ============= 5. STATIONARY PENALTY (DISABLED IN STANDING MODE) =============
         # Track velocity history to detect if robot is stuck
         self.velocity_history.append(abs(forward_vel))
         if len(self.velocity_history) > self.velocity_history_size:
             self.velocity_history.pop(0)  # Remove oldest
 
         stationary_penalty = 0.0
-        if len(self.velocity_history) >= self.velocity_history_size:
+        # Only penalize being stationary in walking mode (curriculum >= 0)
+        if self.curriculum_level >= 0 and len(self.velocity_history) >= self.velocity_history_size:
             # Check average velocity over last ~1 second
             avg_velocity = np.mean(self.velocity_history)
             if avg_velocity < 0.05:  # Moving less than 5 cm/s for 1 second
@@ -505,31 +519,60 @@ class PiDogEnv(gym.Env):
         survival_bonus = 0.1
 
 
-        # ============= 10. GAIT QUALITY REWARD =============
-        # Reward rhythmic leg movement (proper walking has coordinated leg patterns)
+        # ============= 10. GAIT QUALITY / STANDING POSTURE REWARD =============
         joint_velocities = self.data.qvel[6:14]  # 8 leg joints
         leg_vel_variance = np.var(joint_velocities)
 
-        # Good gait has moderate variance (legs moving at different speeds rhythmically)
-        # Too low = frozen/stationary, too high = flailing/chaotic
-        gait_quality = 0.0
-        if 0.5 < leg_vel_variance < 3.0:  # Sweet spot for coordinated movement
-            gait_quality = 1.0
-        elif 0.2 < leg_vel_variance < 5.0:  # Acceptable range
-            gait_quality = 0.5
+        if self.curriculum_level < 0:
+            # STANDING MODE: Reward stable, neutral posture
+            # Low joint velocities = good standing
+            gait_quality = 0.0
+            if leg_vel_variance < 0.2:  # Very still = good
+                gait_quality = 2.0
+
+            # Bonus: reward being near neutral joint positions
+            joint_pos = self.data.qpos[7:15]
+            neutral_positions = np.array([self.neutral_hip, self.neutral_knee] * 4)
+            position_error = np.mean(np.abs(joint_pos - neutral_positions))
+            posture_reward = max(0, 1.0 - position_error * 2.0)  # 0-1 based on error
+        else:
+            # WALKING MODE: Reward rhythmic leg movement
+            # Good gait has moderate variance (legs moving at different speeds rhythmically)
+            # Too low = frozen/stationary, too high = flailing/chaotic
+            gait_quality = 0.0
+            if 0.5 < leg_vel_variance < 3.0:  # Sweet spot for coordinated movement
+                gait_quality = 1.0
+            elif 0.2 < leg_vel_variance < 5.0:  # Acceptable range
+                gait_quality = 0.5
+            posture_reward = 0.0
+
+
+        # ============= 11. HEIGHT MAINTENANCE (ESPECIALLY FOR STANDING) =============
+        body_height = self.data.qpos[2]
+        target_height = 0.14  # Target standing height
+        height_error = abs(body_height - target_height)
+
+        if self.curriculum_level < 0:
+            # STANDING MODE: Strong reward for maintaining height
+            height_reward = max(0, 2.0 - height_error * 20.0)  # 0-2 based on error
+        else:
+            # WALKING MODE: Moderate reward for height
+            height_reward = max(0, 1.0 - height_error * 10.0)  # 0-1 based on error
 
 
         # ============= COMBINE ALL REWARDS =============
         reward = (
-            2.0 * velocity_reward +      # Forward speed
+            2.0 * velocity_reward +      # Forward speed / standing still
             1.0 * obstacle_penalty +     # Avoid obstacles
             2.0 * upright_reward +       # Stay balanced
-            1.0 * fall_penalty +         # Penalize actual falls (NEW!)
-            1.0 * stationary_penalty +   # Don't get stuck
+            1.0 * fall_penalty +         # Penalize actual falls
+            1.0 * stationary_penalty +   # Don't get stuck (disabled in standing)
             1.0 * survival_bonus +       # Reward staying alive
-            1.0 * gait_quality +         # Reward coordinated leg movement
+            1.0 * gait_quality +         # Gait quality / standing stillness
+            1.0 * posture_reward +       # Neutral posture (standing only)
+            1.0 * height_reward +        # Height maintenance
             action_penalty +             # Be efficient
-            lateral_penalty +            # Walk straight
+            lateral_penalty +            # Walk straight / no lateral drift
             collision_penalty            # Avoid leg collisions
         )
 

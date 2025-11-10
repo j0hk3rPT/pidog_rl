@@ -237,8 +237,8 @@ def parse_args():
         "--curriculum-level",
         type=int,
         default=0,
-        choices=[0, 1, 2, 3],
-        help="Curriculum difficulty level (0=easiest, 3=hardest). Default: 0",
+        choices=[-1, 0, 1, 2, 3],
+        help="Curriculum difficulty level (-1=standing only, 0=basic walking, 1-3=progressive difficulty). Default: 0",
     )
     return parser.parse_args()
 
@@ -621,7 +621,8 @@ def main():
     print(f"Observation format: Box (flattened) - shape (21199,)")
     print(f"Camera: {'Enabled' if args.use_camera else 'Disabled (zeros for image)'}")
     print(f"Domain randomization: {'Enabled' if args.domain_randomization else 'Disabled'}")
-    print(f"Curriculum level: {args.curriculum_level} (0=easiest, 3=hardest)")
+    curriculum_desc = {-1: "standing only", 0: "basic walking", 1: "intermediate", 2: "advanced", 3: "expert"}
+    print(f"Curriculum level: {args.curriculum_level} ({curriculum_desc.get(args.curriculum_level, 'unknown')})")
 
     # Use same VecEnv type for training and eval to avoid warnings
     VecEnvClass = SubprocVecEnv if args.n_envs > 1 else DummyVecEnv

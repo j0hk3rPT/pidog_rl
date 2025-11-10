@@ -20,21 +20,49 @@ The training system now uses:
 
 ## Curriculum Levels
 
-### Level 0: Beginner (Default)
-**Goal**: Learn basic forward walking
+### Level -1: Standing Only (NEW!)
+**Goal**: Learn to stand stable before walking
+
+- **No forward motion required** - rewards staying still
+- Rewards: Height maintenance, upright posture, neutral joint positions
+- Penalties: Movement, falling, leg collisions
+- **Best for**: Complete beginners - establishes stable standing first
+- **Duration**: 500K-1M timesteps (~15-30 min)
+
+**Training command**:
+```bash
+python training/train_rl.py \
+  --curriculum-level -1 \
+  --total-timesteps 1_000_000 \
+  --n-envs 16 \
+  --experiment-name standing_only
+```
+
+**What the robot learns**:
+- ✅ Maintain upright balance
+- ✅ Keep legs in neutral position
+- ✅ Stay at correct height (0.14m)
+- ✅ Minimal joint movement (efficient standing)
+- ❌ No walking yet!
+
+---
+
+### Level 0: Basic Walking
+**Goal**: Learn basic forward walking (after standing)
 
 - Target velocity: 0.5 m/s
 - Joint noise: ±0.1 rad
 - Height variation: ±0.02m
 - Initial orientation: Perfectly upright
-- **Best for**: Initial training from scratch
+- **Best for**: After learning to stand, or starting fresh with walking
 
 **Training command**:
 ```bash
 python training/train_rl.py \
   --curriculum-level 0 \
   --total-timesteps 2_000_000 \
-  --n-envs 16
+  --n-envs 16 \
+  --experiment-name basic_walking
 ```
 
 ### Level 1: Intermediate
@@ -155,82 +183,119 @@ def _detect_torso_fall(self):
 
 ## Recommended Training Progression
 
-### Option A: Progressive Curriculum (Best Results)
+### Option A: Standing-First Curriculum (BEST for Beginners!)
 
-Train through all levels sequentially:
+**NEW APPROACH**: Learn to stand before walking - much faster convergence!
 
 ```bash
-# Level 0: Basic walking (30-60 min)
+# Step 1: Standing only (15-30 min)
+python training/train_rl.py \
+  --curriculum-level -1 \
+  --total-timesteps 1_000_000 \
+  --n-envs 16 \
+  --experiment-name standing_only
+
+# Step 2: Basic walking (20-40 min)
 python training/train_rl.py \
   --curriculum-level 0 \
+  --checkpoint outputs/standing_only/ppo_final_model.zip \
   --total-timesteps 2_000_000 \
+  --learning-rate 1e-4 \
   --n-envs 16 \
-  --experiment-name curriculum_level0
+  --experiment-name basic_walking
 
-# Level 1: Initial perturbations (20-30 min)
+# Step 3: Initial perturbations (20-30 min)
 python training/train_rl.py \
   --curriculum-level 1 \
-  --checkpoint outputs/curriculum_level0/ppo_final_model.zip \
+  --checkpoint outputs/basic_walking/ppo_final_model.zip \
   --total-timesteps 1_000_000 \
   --learning-rate 1e-4 \
-  --experiment-name curriculum_level1
+  --experiment-name intermediate_walking
 
-# Level 2: Robust recovery (20-30 min)
+# Step 4: Robust recovery (20-30 min)
 python training/train_rl.py \
   --curriculum-level 2 \
-  --checkpoint outputs/curriculum_level1/ppo_final_model.zip \
+  --checkpoint outputs/intermediate_walking/ppo_final_model.zip \
   --total-timesteps 1_000_000 \
   --learning-rate 5e-5 \
-  --experiment-name curriculum_level2
+  --experiment-name advanced_walking
 
-# Level 3: Expert performance (20-30 min)
+# Step 5: Expert performance (20-30 min)
 python training/train_rl.py \
   --curriculum-level 3 \
-  --checkpoint outputs/curriculum_level2/ppo_final_model.zip \
+  --checkpoint outputs/advanced_walking/ppo_final_model.zip \
   --total-timesteps 1_000_000 \
   --learning-rate 5e-5 \
-  --experiment-name curriculum_level3
+  --experiment-name expert_walking
 ```
 
 **Total time**: ~90-150 minutes for expert-level policy
 
-### Option B: Jump to Level 1 (Faster)
+**Why standing first?**
+- ✅ Faster initial learning (standing is easier than walking)
+- ✅ Better foundation for walking behaviors
+- ✅ Reduces early frustration from constant falling
+- ✅ Can verify standing works before moving to walking
 
-If you have limited time, start at Level 1:
+---
+
+### Option B: Direct Walking (Skip Standing)
+
+If you want to skip standing and go straight to walking:
 
 ```bash
 python training/train_rl.py \
-  --curriculum-level 1 \
+  --curriculum-level 0 \
   --total-timesteps 2_500_000 \
-  --n-envs 16
+  --n-envs 16 \
+  --experiment-name direct_walking
 ```
 
-### Option C: Two-Phase + Curriculum (Best of Both)
+**Pros**: Simpler (one step)
+**Cons**: Slower convergence, robot falls more initially
 
-Combine curriculum learning with two-phase training:
+---
 
-**Stage 1: Fast proprioceptive (Level 0)**
+### Option C: Two-Phase + Standing-First (Ultimate Performance)
+
+Combine curriculum learning with two-phase training for fastest results:
+
+**Phase 1: Standing (no camera, fast)**
+```bash
+python training/train_rl.py \
+  --disable-camera \
+  --curriculum-level -1 \
+  --total-timesteps 1_000_000 \
+  --n-envs 16 \
+  --experiment-name phase1_standing_nocam
+```
+
+**Phase 2: Walking (no camera, fast)**
 ```bash
 python training/train_rl.py \
   --disable-camera \
   --curriculum-level 0 \
+  --checkpoint outputs/phase1_standing_nocam/ppo_final_model.zip \
   --total-timesteps 2_000_000 \
   --n-envs 16 \
-  --experiment-name stage1_curriculum0
+  --learning-rate 1e-4 \
+  --experiment-name phase2_walking_nocam
 ```
 
-**Stage 2: Visual + harder curriculum (Level 2)**
+**Phase 3: Visual fine-tuning + advanced curriculum**
 ```bash
 python training/train_rl.py \
   --use-camera \
   --camera-width 64 --camera-height 64 \
   --curriculum-level 2 \
-  --checkpoint outputs/stage1_curriculum0/ppo_final_model.zip \
+  --checkpoint outputs/phase2_walking_nocam/ppo_final_model.zip \
   --total-timesteps 1_500_000 \
   --n-envs 8 \
-  --learning-rate 1e-4 \
-  --experiment-name stage2_curriculum2_visual
+  --learning-rate 5e-5 \
+  --experiment-name phase3_visual_advanced
 ```
+
+**Total time**: ~60-100 minutes for robust visual walking policy!
 
 ## Monitoring Training
 
