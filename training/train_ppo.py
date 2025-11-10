@@ -463,7 +463,15 @@ def main():
     print("="*70)
     print(f"Results saved in: {experiment_dir}")
     print(f"\nNext steps:")
-    print(f"  1. Test model: python training/test_trained_model.py {final_model_path}.zip")
+
+    # Build test command with correct camera flags
+    test_cmd = f"python training/test_trained_model.py --model-path {final_model_path}.zip"
+    if not args.use_camera:
+        test_cmd += " --disable-camera"
+    elif args.camera_width != 64 or args.camera_height != 64:
+        test_cmd += f" --use-camera --camera-width {args.camera_width} --camera-height {args.camera_height}"
+
+    print(f"  1. Test model: {test_cmd}")
     print(f"  2. TensorBoard: tensorboard --logdir={args.log_dir}")
     print(f"  3. Continue training: --checkpoint {final_model_path}.zip")
     print()

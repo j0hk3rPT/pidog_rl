@@ -162,7 +162,9 @@ Navigate to http://localhost:6006 to view:
 
 After training, you can:
 
-1. **Test the model**: See `training/test_trained_model.py`
+1. **Test the model**:
+   - Stage 1 (no camera): `python training/test_trained_model.py --model-path outputs/stage1_proprioceptive/ppo_final_model.zip --disable-camera`
+   - Stage 2 (with camera): `python training/test_trained_model.py --model-path outputs/stage2_visual/ppo_final_model.zip --use-camera`
 2. **Deploy to hardware**: Export to real PiDog robot
 3. **Further fine-tuning**: Add BC pretraining with `--pretrain-bc`
 

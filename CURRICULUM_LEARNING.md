@@ -392,7 +392,9 @@ The robot learns recovery behaviors gradually. If after 2M+ timesteps at Level 1
 ## Next Steps
 
 After curriculum training:
-1. **Test model**: Use `training/test_trained_model.py` to see the policy in action
+1. **Test model**:
+   - If trained without camera: `python training/test_trained_model.py --model-path <path_to_model.zip> --disable-camera`
+   - If trained with camera: `python training/test_trained_model.py --model-path <path_to_model.zip> --use-camera`
 2. **Real hardware**: Export with `scripts/export_for_pi.py`
 3. **Further tuning**: Try BC pretraining with `--pretrain-bc` at Level 0
 

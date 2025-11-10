@@ -42,20 +42,24 @@ def parse_args():
     parser.add_argument(
         "--use-camera",
         action="store_true",
-        default=True,
-        help="Use camera observations",
+        help="Enable camera observations",
+    )
+    parser.add_argument(
+        "--disable-camera",
+        action="store_true",
+        help="Disable camera rendering (must match training config!)",
     )
     parser.add_argument(
         "--camera-width",
         type=int,
-        default=84,
-        help="Camera image width (default: 84, matches training default)",
+        default=64,
+        help="Camera image width (default: 64, must match training config!)",
     )
     parser.add_argument(
         "--camera-height",
         type=int,
-        default=84,
-        help="Camera image height (default: 84, matches training default)",
+        default=64,
+        help="Camera image height (default: 64, must match training config!)",
     )
     return parser.parse_args()
 
@@ -64,6 +68,10 @@ def main():
     """Main testing function."""
     args = parse_args()
 
+    # Handle camera flags
+    if args.disable_camera:
+        args.use_camera = False
+
     print("=" * 60)
     print("PiDog RL Model Testing")
     print("=" * 60)
@@ -71,19 +79,23 @@ def main():
     print(f"Algorithm: {args.algorithm.upper()}")
     print(f"Episodes: {args.episodes}")
     print(f"Deterministic: {args.deterministic}")
-    print(f"Camera: {args.use_camera} ({args.camera_width}x{args.camera_height})")
+    if args.use_camera:
+        print(f"Camera: Enabled ({args.camera_width}x{args.camera_height})")
+    else:
+        print(f"Camera: Disabled (zeros)")
     print("=" * 60)
 
     # Create environment with rendering
-    # Note: Always uses Box observations (flattened) - shape (21199,)
     print(f"\nCreating environment with visualization...")
-    print(f"Observation format: Box (flattened) - shape (21199,)")
 
     env = PiDogEnv(
         use_camera=args.use_camera,
         camera_width=args.camera_width,
         camera_height=args.camera_height,
     )
+
+    # Print actual observation shape
+    print(f"Observation format: Box (flattened) - shape {env.observation_space.shape}")
 
     # Load model
     print(f"\nLoading model from {args.model_path}...")

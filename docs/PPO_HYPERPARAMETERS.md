@@ -252,6 +252,11 @@ python training/train_ppo.py \
   --curriculum-level -1 \
   --disable-camera \
   --total-timesteps 1_000_000
+
+# Test it
+python training/test_trained_model.py \
+  --model-path outputs/ppo_standing_*/ppo_final_model.zip \
+  --disable-camera
 ```
 
 ### Standard Training (Walking)
@@ -261,6 +266,11 @@ python training/train_ppo.py \
   --curriculum-level 0 \
   --disable-camera \
   --total-timesteps 2_000_000
+
+# Test it
+python training/test_trained_model.py \
+  --model-path outputs/ppo_walk_*/ppo_final_model.zip \
+  --disable-camera
 ```
 
 ### Advanced Training (Visual)
@@ -272,6 +282,13 @@ python training/train_ppo.py \
   --camera-width 64 \
   --camera-height 64 \
   --total-timesteps 2_000_000
+
+# Test it (with camera!)
+python training/test_trained_model.py \
+  --model-path outputs/ppo_adv_*/ppo_final_model.zip \
+  --use-camera \
+  --camera-width 64 \
+  --camera-height 64
 ```
 
 ### Custom Hyperparameters
@@ -284,6 +301,15 @@ python training/train_ppo.py \
   --n-envs 32 \
   --ent-coef 0.01
 ```
+
+### Testing Models
+
+**IMPORTANT**: Testing must match training configuration!
+
+- **Trained without camera**: Add `--disable-camera` flag
+- **Trained with camera**: Add `--use-camera --camera-width X --camera-height Y` flags
+
+The observation shape must match between training and testing, otherwise you'll get a ValueError.
 
 ## Monitoring
 
