@@ -434,6 +434,7 @@ def create_algorithm(algorithm_name, env, args):
             train_freq=args.train_freq,
             gradient_steps=args.gradient_steps,
             buffer_size=args.buffer_size,
+            optimize_memory_usage=True,  # Reduces memory by ~50% for image observations
             **common_kwargs,
         )
     elif algorithm_name == "td3":
@@ -447,6 +448,7 @@ def create_algorithm(algorithm_name, env, args):
             train_freq=args.train_freq,
             gradient_steps=args.gradient_steps,
             buffer_size=args.buffer_size,
+            optimize_memory_usage=True,  # Reduces memory by ~50% for image observations
             **common_kwargs,
         )
     else:
