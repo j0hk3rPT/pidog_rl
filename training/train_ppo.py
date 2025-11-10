@@ -149,8 +149,8 @@ def parse_args():
     parser.add_argument(
         "--device",
         type=str,
-        default="auto",
-        help="Device to use: cpu/cuda/auto (default: auto)",
+        default="cpu",
+        help="Device to use: cpu/cuda/auto (default: cpu)",
     )
     parser.add_argument(
         "--checkpoint",
