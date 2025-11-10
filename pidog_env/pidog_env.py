@@ -285,15 +285,15 @@ class PiDogEnv(gym.Env):
 
         return False
 
-    def _detect_torso_fall(self, force_threshold=1.0) -> tuple[bool, float]:
+    def _detect_torso_fall(self) -> bool:
         """
-        Detect actual fall based on contact force on torso/body parts.
+        Detect actual fall: torso/body touching ground.
 
-        Args:
-            force_threshold: Contact force threshold in Newtons (default 1.0N)
+        Simple and reliable: If torso touches ground = fall.
+        No complex force calculations needed.
 
         Returns:
-            Tuple of (is_fallen, max_contact_force)
+            True if fallen, False otherwise
         """
         # Get ground geom ID
         ground_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'ground')
@@ -313,8 +313,6 @@ class PiDogEnv(gym.Env):
             if geom_id >= 0:
                 torso_geom_ids.append(geom_id)
 
-        max_contact_force = 0.0
-
         # Check all active contacts
         for i in range(self.data.ncon):
             contact = self.data.contact[i]
@@ -324,29 +322,10 @@ class PiDogEnv(gym.Env):
             # Check if torso geom is touching ground
             if (geom1 == ground_id and geom2 in torso_geom_ids) or \
                (geom2 == ground_id and geom1 in torso_geom_ids):
+                # Torso touching ground = FALL
+                return True
 
-                # Calculate contact force magnitude
-                # MuJoCo stores contact forces in contact.efc_force after mj_step
-                # We need to compute it from constraint forces
-                contact_force = np.linalg.norm(self.data.contact[i].frame[:3])  # Normal force vector
-
-                # Alternative: use contact normal force directly
-                # The contact solver computes forces, but we approximate from penetration
-                penetration_depth = contact.dist
-                if penetration_depth < 0:  # Negative dist means penetration
-                    # Approximate force from penetration (Hooke's law approximation)
-                    # F ≈ k * penetration, where k depends on material stiffness
-                    # MuJoCo's solver already handles this, so we use efc_force
-                    # For simplicity, we'll use a heuristic based on contact position
-                    contact_force = abs(penetration_depth) * 100.0  # Rough approximation
-
-                max_contact_force = max(max_contact_force, contact_force)
-
-                # If force exceeds threshold, it's a fall
-                if contact_force > force_threshold:
-                    return True, contact_force
-
-        return False, max_contact_force
+        return False
 
     def _get_obs(self):
         """Get current observation with camera and all sensors.
@@ -439,7 +418,7 @@ class PiDogEnv(gym.Env):
         1. Forward velocity (MAIN GOAL) - high weight
         2. Obstacle avoidance using ultrasonic - critical for safety
         3. Upright stability - important for not falling
-        4. Fall penalty - ONLY for actual falls (contact force > 1.0N)
+        4. Fall penalty - ONLY for actual falls (torso touching ground)
         5. Stationary penalty - must keep moving
         6. Energy efficiency - smooth movements
         7. Lateral stability - walk straight
@@ -477,8 +456,8 @@ class PiDogEnv(gym.Env):
 
 
         # ============= 4. FALL PENALTY (ONLY FOR ACTUAL FALLS) =============
-        # Check for actual fall based on contact forces
-        is_fallen, contact_force = self._detect_torso_fall(force_threshold=1.0)
+        # Check for actual fall: torso touching ground
+        is_fallen = self._detect_torso_fall()
         fall_penalty = 0.0
         if is_fallen:
             # Large penalty for actual fall
@@ -560,15 +539,15 @@ class PiDogEnv(gym.Env):
         """
         Check if episode should terminate (fall detection).
 
-        NEW APPROACH: Only terminate on ACTUAL FALLS detected by contact forces.
-        Uses contact force > 1.0N on torso/body parts as fall indicator.
+        NEW APPROACH: Only terminate on ACTUAL FALLS (torso touching ground).
+        Simple contact detection - if torso hits ground, it's a fall.
 
         This allows the robot to:
         - Recover from tilted positions (no early termination)
         - Learn from near-fall situations
         - Develop robust behaviors through curriculum learning
         """
-        # Only terminate if we detected an actual fall (contact force > 1.0N)
+        # Only terminate if we detected an actual fall (torso touching ground)
         # Fall detection is done in _compute_reward() and stored in self._has_fallen
         if hasattr(self, '_has_fallen') and self._has_fallen:
             return True
