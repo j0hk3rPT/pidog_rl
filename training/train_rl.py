@@ -23,11 +23,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from pidog_env import PiDogEnv
-from pidog_env.feature_extractors import (
-    PiDogCombinedExtractor,
-    PiDogNatureCNNExtractor,
-    PiDogFlattenedExtractor,
-)
+from pidog_env.feature_extractors import PiDogFlattenedExtractor
 
 # Try to import imitation for BC pretraining
 try:
@@ -228,14 +224,13 @@ def parse_args():
     return parser.parse_args()
 
 
-def make_env(rank, seed=0, use_camera=True, camera_width=84, camera_height=84, use_dict_obs=True):
+def make_env(rank, seed=0, use_camera=True, camera_width=84, camera_height=84):
     """Create a single environment instance."""
     def _init():
         env = PiDogEnv(
             use_camera=use_camera,
             camera_width=camera_width,
             camera_height=camera_height,
-            use_dict_obs=use_dict_obs
         )
         env = Monitor(env)
         env.reset(seed=seed + rank)
@@ -412,41 +407,31 @@ def pretrain_with_bc(model, transitions, args):
 
 def create_algorithm(algorithm_name, env, args, buffer_dtypes=None):
     """Create RL algorithm instance."""
-    # Determine if we're using compression (Box obs) or Dict obs
-    # Compression now works for PPO (CompressedRolloutBuffer), SAC, and TD3 (CompressedReplayBuffer)
+    # Always use CnnPolicy with PiDogFlattenedExtractor (Box observations)
+    # Compression works for PPO (CompressedRolloutBuffer), SAC, and TD3 (CompressedReplayBuffer)
     use_compression = args.use_compression and algorithm_name in ["ppo", "sac", "td3"]
 
+    # Always use CnnPolicy with flattened observations
+    policy_type = "CnnPolicy"
+    extractor_class = PiDogFlattenedExtractor
+    extractor_kwargs = {
+        "features_dim": args.features_dim,
+        "camera_width": args.camera_width,
+        "camera_height": args.camera_height,
+    }
+
     if use_compression:
-        # Using flattened Box observations for compression
-        policy_type = "CnnPolicy"
-        extractor_class = PiDogFlattenedExtractor
-        extractor_kwargs = {
-            "features_dim": args.features_dim,
-            "camera_width": args.camera_width,
-            "camera_height": args.camera_height,
-        }
         buffer_type = "CompressedRolloutBuffer" if algorithm_name == "ppo" else "CompressedReplayBuffer"
         print(f"Using {buffer_type} with {args.compression_method}")
-        print(f"Using PiDogFlattenedExtractor (Box observations)")
-    else:
-        # Using Dict observations (original format)
-        policy_type = "MultiInputPolicy"
-        if args.use_nature_cnn:
-            extractor_class = PiDogNatureCNNExtractor
-            print("Using Nature DQN architecture (deeper CNN)")
-        else:
-            extractor_class = PiDogCombinedExtractor
-            print("Using standard combined CNN+MLP architecture")
-        extractor_kwargs = {"features_dim": args.features_dim}
-        print("Using Dict observations (no compression)")
+
+    print(f"Policy: CnnPolicy with PiDogFlattenedExtractor")
+    print(f"Camera: {'Enabled' if args.use_camera else 'Disabled (zeros for image)'}")
+    print(f"Observation shape: (21199,) - always Box observations")
 
     policy_kwargs = {
         "features_extractor_class": extractor_class,
         "features_extractor_kwargs": extractor_kwargs,
     }
-
-    if not args.use_camera:
-        print("Note: Camera disabled - image observations will be zeros")
 
     common_kwargs = {
         "env": env,
@@ -546,9 +531,8 @@ def main():
         args.use_camera = False
 
     # Handle compression flags
-    # Compression requires Box observations (flattened)
-    # Supported for PPO (CompressedRolloutBuffer), SAC, and TD3 (CompressedReplayBuffer)
-    use_dict_obs = not (args.use_compression and args.algorithm in ["ppo", "sac", "td3"])
+    # Compression supported for PPO (CompressedRolloutBuffer), SAC, and TD3 (CompressedReplayBuffer)
+    # Note: We always use Box observations (flattened), compression just adds buffer compression on top
     use_compression = args.use_compression and args.algorithm in ["ppo", "sac", "td3"]
 
     if args.use_compression and args.algorithm not in ["ppo", "sac", "td3"]:
@@ -612,21 +596,22 @@ def main():
 
     # Create vectorized environments AFTER initializing compression
     print(f"\nCreating {args.n_envs} parallel environments...")
-    print(f"Observation format: {'Box (flattened)' if not use_dict_obs else 'Dict (image+vector)'}")
+    print(f"Observation format: Box (flattened) - shape (21199,)")
+    print(f"Camera: {'Enabled' if args.use_camera else 'Disabled (zeros for image)'}")
 
     if args.n_envs > 1:
         env = SubprocVecEnv([
-            make_env(i, args.seed, args.use_camera, args.camera_width, args.camera_height, use_dict_obs)
+            make_env(i, args.seed, args.use_camera, args.camera_width, args.camera_height)
             for i in range(args.n_envs)
         ])
     else:
         env = DummyVecEnv([
-            make_env(0, args.seed, args.use_camera, args.camera_width, args.camera_height, use_dict_obs)
+            make_env(0, args.seed, args.use_camera, args.camera_width, args.camera_height)
         ])
 
     # Create evaluation environment
     eval_env = DummyVecEnv([
-        make_env(args.n_envs, args.seed, args.use_camera, args.camera_width, args.camera_height, use_dict_obs)
+        make_env(args.n_envs, args.seed, args.use_camera, args.camera_width, args.camera_height)
     ])
 
     # Create or load model

@@ -56,11 +56,6 @@ def parse_args():
         help="Random seed",
     )
     parser.add_argument(
-        "--use-compression",
-        action="store_true",
-        help="Model was trained with compression (Box obs). Use this if you trained with --use-compression",
-    )
-    parser.add_argument(
         "--use-camera",
         action="store_true",
         default=True,
@@ -196,21 +191,22 @@ def main():
     print(f"Deterministic: {args.deterministic}")
     print(f"Render: {args.render}")
     print(f"Camera: {args.use_camera} ({args.camera_width}x{args.camera_height})")
-    print(f"Compression: {args.use_compression}")
     if args.record_video:
         print(f"Recording to: {args.record_video}")
     print("=" * 60)
 
     # Create environment
-    # Note: If model was trained with compression, use Box observations (flattened)
-    use_dict_obs = not args.use_compression
+    # Note: Always uses Box observations (flattened) - shape (21199,)
+    print(f"\nCreating environment...")
+    print(f"Observation format: Box (flattened) - shape (21199,)")
+    print(f"Camera: {'Enabled' if args.use_camera else 'Disabled (zeros for image)'}")
+
     render_mode = "human" if args.render else ("rgb_array" if args.record_video else None)
     env = PiDogEnv(
         render_mode=render_mode,
         use_camera=args.use_camera,
         camera_width=args.camera_width,
         camera_height=args.camera_height,
-        use_dict_obs=use_dict_obs
     )
 
     # Load model

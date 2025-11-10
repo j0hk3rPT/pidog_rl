@@ -57,11 +57,6 @@ def parse_args():
         default=84,
         help="Camera image height (default: 84, matches training default)",
     )
-    parser.add_argument(
-        "--use-compression",
-        action="store_true",
-        help="Model was trained with compression (Box obs). Use this if you trained with --use-compression",
-    )
     return parser.parse_args()
 
 
@@ -77,20 +72,17 @@ def main():
     print(f"Episodes: {args.episodes}")
     print(f"Deterministic: {args.deterministic}")
     print(f"Camera: {args.use_camera} ({args.camera_width}x{args.camera_height})")
-    print(f"Compression: {args.use_compression}")
     print("=" * 60)
 
     # Create environment with rendering
-    # Note: If model was trained with compression, use Box observations (flattened)
-    use_dict_obs = not args.use_compression
+    # Note: Always uses Box observations (flattened) - shape (21199,)
     print(f"\nCreating environment with visualization...")
-    print(f"Observation format: {'Box (flattened)' if not use_dict_obs else 'Dict (image+vector)'}")
+    print(f"Observation format: Box (flattened) - shape (21199,)")
 
     env = PiDogEnv(
         use_camera=args.use_camera,
         camera_width=args.camera_width,
         camera_height=args.camera_height,
-        use_dict_obs=use_dict_obs
     )
 
     # Load model

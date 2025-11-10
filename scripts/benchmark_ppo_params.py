@@ -30,7 +30,7 @@ import psutil
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from pidog_env import PiDogEnv
-from pidog_env.feature_extractors import PiDogCombinedExtractor, PiDogFlattenedExtractor
+from pidog_env.feature_extractors import PiDogFlattenedExtractor
 
 # Try to import sb3-extra-buffers for compression
 try:
@@ -77,14 +77,13 @@ class BenchmarkCallback(BaseCallback):
         }
 
 
-def make_env(rank, use_camera=False, camera_width=84, camera_height=84, use_dict_obs=True, seed=0):
+def make_env(rank, use_camera=False, camera_width=84, camera_height=84, seed=0):
     """Create environment."""
     def _init():
         env = PiDogEnv(
             use_camera=use_camera,
             camera_width=camera_width,
             camera_height=camera_height,
-            use_dict_obs=use_dict_obs
         )
         env = Monitor(env)
         env.reset(seed=seed + rank)
@@ -119,15 +118,14 @@ def run_benchmark(config, args):
                 print(f"Adjusted batch_size to {bs}")
                 break
 
-    # Determine observation format based on compression
-    use_dict_obs = not args.use_compression
+    # Always use Box observations (21199,) with CnnPolicy
+    # Compression is optional and adds buffer compression on top
     use_compression = args.use_compression and SB3_EXTRA_BUFFERS_AVAILABLE
 
     if args.use_compression and not SB3_EXTRA_BUFFERS_AVAILABLE:
         print("⚠️  Compression requested but sb3-extra-buffers not available!")
         print("Install with: pip install 'sb3-extra-buffers[fast,extra]'")
-        print("Falling back to Dict observations (no compression)")
-        use_dict_obs = True
+        print("Falling back to no compression")
         use_compression = False
 
     # CRITICAL: Initialize buffer dtypes BEFORE creating environments
@@ -145,31 +143,31 @@ def run_benchmark(config, args):
 
     # Create vectorized environments AFTER initializing compression
     print(f"Creating {args.n_envs} parallel environment(s)...")
+    print(f"Observation format: Box (flattened) - shape (21199,)")
+    print(f"Camera: {'Enabled' if args.use_camera else 'Disabled (zeros for image)'}")
     if args.n_envs > 1:
         env = SubprocVecEnv([
-            make_env(i, args.use_camera, args.camera_width, args.camera_height, use_dict_obs, args.seed)
+            make_env(i, args.use_camera, args.camera_width, args.camera_height, args.seed)
             for i in range(args.n_envs)
         ])
     else:
         env = DummyVecEnv([
-            make_env(0, args.use_camera, args.camera_width, args.camera_height, use_dict_obs, args.seed)
+            make_env(0, args.use_camera, args.camera_width, args.camera_height, args.seed)
         ])
 
-    # Policy and feature extractor configuration
+    # Always use CnnPolicy with PiDogFlattenedExtractor (Box observations)
+    policy_type = "CnnPolicy"
+    extractor_class = PiDogFlattenedExtractor
+    extractor_kwargs = {
+        "features_dim": args.features_dim,
+        "camera_width": args.camera_width,
+        "camera_height": args.camera_height,
+    }
+    print(f"Using CnnPolicy with PiDogFlattenedExtractor")
     if use_compression:
-        policy_type = "CnnPolicy"
-        extractor_class = PiDogFlattenedExtractor
-        extractor_kwargs = {
-            "features_dim": args.features_dim,
-            "camera_width": args.camera_width,
-            "camera_height": args.camera_height,
-        }
-        print(f"Using compressed buffer with Box observations")
+        print(f"Buffer compression: Enabled ({args.compression_method})")
     else:
-        policy_type = "MultiInputPolicy"
-        extractor_class = PiDogCombinedExtractor
-        extractor_kwargs = {"features_dim": args.features_dim}
-        print("Using Dict observations (no compression)")
+        print(f"Buffer compression: Disabled")
 
     policy_kwargs = {
         "features_extractor_class": extractor_class,
