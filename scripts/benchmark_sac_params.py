@@ -283,7 +283,8 @@ def main():
     parser.add_argument('--skip-large', type=bool, default=True,
                         help='Skip configs that may exceed memory')
     parser.add_argument('--configs', type=str, nargs='+',
-                        choices=['fast', 'balanced', 'quality', 'memory-efficient', 'aggressive', 'maximum', 'all'],
+                        choices=['robotics-optimal', 'recommended', 'conservative', 'sb3-default',
+                                'fast-training', 'sample-efficient', 'all'],
                         default=['all'],
                         help='Which configs to test')
     parser.add_argument('--use-compression', action='store_true',
@@ -312,63 +313,64 @@ def main():
     print(f"  Available: {mem_info.available / (1024**3):.1f} GB")
 
     # Define configurations to test
-    # Note: Buffer sizes optimized for COMPRESSED Box observations with 30GB RAM
-    # With zstd-3 compression (95% savings): 1M buffer = ~2GB, 2M = ~4GB, 5M = ~10GB
-    # Uncompressed would be: 1M = ~40GB, 2M = ~80GB (not possible without compression)
+    # Note: Buffer sizes based on research for robotics continuous control tasks
+    # Research shows smaller buffers (50K-100K) + larger batches (512) work BETTER for robotics
+    # than standard 1M buffer defaults. Testing range: 50K-1M to validate.
+    # With compression: 50K=~100MB, 100K=~200MB, 200K=~400MB, 500K=~1GB, 1M=~2GB
     all_configs = {
-        'fast': {
+        'robotics-optimal': {
+            'name': 'Robotics Optimal',
+            'buffer_size': 50_000,  # Research: best for robotics
+            'batch_size': 512,       # Research: larger batches for robotics
+            'train_freq': 1,
+            'gradient_steps': 8,     # Research recommended
+            'learning_starts': 1000,
+            'description': 'Research-based optimal for robotics (50K buffer, 512 batch)'
+        },
+        'recommended': {
+            'name': 'Recommended',
+            'buffer_size': 100_000,  # Research: good balance
+            'batch_size': 256,
+            'train_freq': 1,
+            'gradient_steps': 4,
+            'learning_starts': 1000,
+            'description': 'Recommended settings (100K buffer, balanced params)'
+        },
+        'conservative': {
+            'name': 'Conservative',
+            'buffer_size': 200_000,  # Conservative middle ground
+            'batch_size': 256,
+            'train_freq': 1,
+            'gradient_steps': 1,     # SB3 default
+            'learning_starts': 1000,
+            'description': 'Conservative middle ground (200K buffer, default gradient_steps)'
+        },
+        'sb3-default': {
+            'name': 'SB3 Default',
+            'buffer_size': 1_000_000,  # Official SB3 default
+            'batch_size': 256,
+            'train_freq': 1,
+            'gradient_steps': 1,
+            'learning_starts': 100,   # SB3 default
+            'description': 'Stable-Baselines3 defaults (1M buffer, baseline comparison)'
+        },
+        'fast-training': {
             'name': 'Fast Training',
-            'buffer_size': 1_000_000,  # ~2GB RAM compressed
+            'buffer_size': 100_000,
             'batch_size': 512,
-            'train_freq': 16,
-            'gradient_steps': 16,
-            'learning_starts': 1000,
-            'description': 'Optimized for training speed with large buffer'
-        },
-        'balanced': {
-            'name': 'Balanced',
-            'buffer_size': 2_000_000,  # ~4GB RAM compressed (recommended)
-            'batch_size': 256,
-            'train_freq': 8,
+            'train_freq': 2,         # More frequent updates
             'gradient_steps': 8,
-            'learning_starts': 5000,
-            'description': 'Balance between speed and quality with 2M buffer'
+            'learning_starts': 500,  # Start training earlier
+            'description': 'Optimized for training speed (frequent updates, large batches)'
         },
-        'quality': {
-            'name': 'High Quality',
-            'buffer_size': 3_000_000,  # ~6GB RAM compressed
+        'sample-efficient': {
+            'name': 'Sample Efficient',
+            'buffer_size': 500_000,  # Larger buffer for diversity
             'batch_size': 256,
-            'train_freq': 4,
+            'train_freq': 1,
             'gradient_steps': 4,
-            'learning_starts': 10000,
-            'description': 'Optimized for sample efficiency and stability'
-        },
-        'memory-efficient': {
-            'name': 'Memory Efficient',
-            'buffer_size': 500_000,  # ~1GB RAM compressed
-            'batch_size': 128,
-            'train_freq': 4,
-            'gradient_steps': 4,
-            'learning_starts': 1000,
-            'description': 'Minimal memory footprint (~1GB compressed)'
-        },
-        'aggressive': {
-            'name': 'Aggressive Training',
-            'buffer_size': 2_000_000,  # ~4GB RAM compressed
-            'batch_size': 1024,
-            'train_freq': 32,
-            'gradient_steps': 32,
-            'learning_starts': 500,
-            'description': 'Maximum training speed with large batches (may be unstable)'
-        },
-        'maximum': {
-            'name': 'Maximum Buffer',
-            'buffer_size': 5_000_000,  # ~10GB RAM compressed
-            'batch_size': 256,
-            'train_freq': 4,
-            'gradient_steps': 4,
-            'learning_starts': 20000,
-            'description': 'Maximum diversity with 5M buffer (best for complex tasks)'
+            'learning_starts': 5000, # More exploration before training
+            'description': 'Optimized for sample efficiency (larger buffer, delayed training)'
         },
     }
 
