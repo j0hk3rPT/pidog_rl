@@ -283,7 +283,7 @@ def main():
     parser.add_argument('--skip-large', type=bool, default=True,
                         help='Skip configs that may exceed memory')
     parser.add_argument('--configs', type=str, nargs='+',
-                        choices=['fast', 'balanced', 'quality', 'memory-efficient', 'aggressive', 'all'],
+                        choices=['fast', 'balanced', 'quality', 'memory-efficient', 'aggressive', 'maximum', 'all'],
                         default=['all'],
                         help='Which configs to test')
     parser.add_argument('--use-compression', action='store_true',
@@ -312,54 +312,63 @@ def main():
     print(f"  Available: {mem_info.available / (1024**3):.1f} GB")
 
     # Define configurations to test
-    # Note: Buffer sizes optimized for Dict observations (image+vector) with 30GB RAM
-    # DictReplayBuffer stores obs+next_obs separately: ~40 bytes/transition
-    # 400K buffer = ~16GB, 500K = ~20GB, 300K = ~12GB
+    # Note: Buffer sizes optimized for COMPRESSED Box observations with 30GB RAM
+    # With zstd-3 compression (95% savings): 1M buffer = ~2GB, 2M = ~4GB, 5M = ~10GB
+    # Uncompressed would be: 1M = ~40GB, 2M = ~80GB (not possible without compression)
     all_configs = {
         'fast': {
             'name': 'Fast Training',
-            'buffer_size': 300_000,  # ~12GB RAM
-            'batch_size': 256,
-            'train_freq': 8,
-            'gradient_steps': 8,
+            'buffer_size': 1_000_000,  # ~2GB RAM compressed
+            'batch_size': 512,
+            'train_freq': 16,
+            'gradient_steps': 16,
             'learning_starts': 1000,
-            'description': 'Optimized for training speed'
+            'description': 'Optimized for training speed with large buffer'
         },
         'balanced': {
             'name': 'Balanced',
-            'buffer_size': 400_000,  # ~16GB RAM (recommended)
-            'batch_size': 128,
-            'train_freq': 4,
-            'gradient_steps': 4,
-            'learning_starts': 1000,
-            'description': 'Balance between speed and quality'
+            'buffer_size': 2_000_000,  # ~4GB RAM compressed (recommended)
+            'batch_size': 256,
+            'train_freq': 8,
+            'gradient_steps': 8,
+            'learning_starts': 5000,
+            'description': 'Balance between speed and quality with 2M buffer'
         },
         'quality': {
             'name': 'High Quality',
-            'buffer_size': 500_000,  # ~20GB RAM (max safe)
+            'buffer_size': 3_000_000,  # ~6GB RAM compressed
             'batch_size': 256,
-            'train_freq': 1,
-            'gradient_steps': 1,
-            'learning_starts': 5000,
+            'train_freq': 4,
+            'gradient_steps': 4,
+            'learning_starts': 10000,
             'description': 'Optimized for sample efficiency and stability'
         },
         'memory-efficient': {
             'name': 'Memory Efficient',
-            'buffer_size': 200_000,  # ~8GB RAM
-            'batch_size': 64,
+            'buffer_size': 500_000,  # ~1GB RAM compressed
+            'batch_size': 128,
             'train_freq': 4,
             'gradient_steps': 4,
             'learning_starts': 1000,
-            'description': 'Minimal memory footprint (~8GB)'
+            'description': 'Minimal memory footprint (~1GB compressed)'
         },
         'aggressive': {
             'name': 'Aggressive Training',
-            'buffer_size': 400_000,  # ~16GB RAM
-            'batch_size': 512,
-            'train_freq': 16,
-            'gradient_steps': 16,
+            'buffer_size': 2_000_000,  # ~4GB RAM compressed
+            'batch_size': 1024,
+            'train_freq': 32,
+            'gradient_steps': 32,
             'learning_starts': 500,
-            'description': 'Maximum training speed (may be unstable)'
+            'description': 'Maximum training speed with large batches (may be unstable)'
+        },
+        'maximum': {
+            'name': 'Maximum Buffer',
+            'buffer_size': 5_000_000,  # ~10GB RAM compressed
+            'batch_size': 256,
+            'train_freq': 4,
+            'gradient_steps': 4,
+            'learning_starts': 20000,
+            'description': 'Maximum diversity with 5M buffer (best for complex tasks)'
         },
     }
 
