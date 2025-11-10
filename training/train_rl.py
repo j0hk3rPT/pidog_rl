@@ -623,20 +623,17 @@ def main():
     print(f"Domain randomization: {'Enabled' if args.domain_randomization else 'Disabled'}")
     print(f"Curriculum level: {args.curriculum_level} (0=easiest, 3=hardest)")
 
-    if args.n_envs > 1:
-        env = SubprocVecEnv([
-            make_env(i, args.seed, args.use_camera, args.camera_width, args.camera_height,
-                    args.domain_randomization, args.curriculum_level)
-            for i in range(args.n_envs)
-        ])
-    else:
-        env = DummyVecEnv([
-            make_env(0, args.seed, args.use_camera, args.camera_width, args.camera_height,
-                    args.domain_randomization, args.curriculum_level)
-        ])
+    # Use same VecEnv type for training and eval to avoid warnings
+    VecEnvClass = SubprocVecEnv if args.n_envs > 1 else DummyVecEnv
 
-    # Create evaluation environment
-    eval_env = DummyVecEnv([
+    env = VecEnvClass([
+        make_env(i, args.seed, args.use_camera, args.camera_width, args.camera_height,
+                args.domain_randomization, args.curriculum_level)
+        for i in range(args.n_envs)
+    ])
+
+    # Create evaluation environment with SAME wrapper type as training env
+    eval_env = VecEnvClass([
         make_env(args.n_envs, args.seed, args.use_camera, args.camera_width, args.camera_height,
                 args.domain_randomization, args.curriculum_level)
     ])
