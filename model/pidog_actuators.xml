@@ -3,7 +3,8 @@
 
   Servo Specifications: MG90S Metal Gear Servo (or similar 9g metal gear servo)
   - Torque: 0.176-0.216 Nm (1.8-2.2 kgf·cm at 4.8-6V)
-  - Speed: 600-750°/s (10.47-13.09 rad/s)
+  - Speed: 333-400°/s (5.8-7.0 rad/s)
+  - No Load Speed: 4.8V: 60°/0.18sec, 6V: 60°/0.15sec
   - Operating voltage: 4.8-6.0V
   - Physical Range: 0-180° (0 to π radians)
   - Control Range: -90° to 180° (-π/2 to π radians) to match environment scaling
@@ -21,7 +22,7 @@
         - gear: 1 (direct drive)
 
         Note: Velocity limiting is handled in the environment code
-        to match the 13.09 rad/s max speed specification (750°/s at 6V)
+        to match the 7.0 rad/s max speed specification (400°/s at 6V)
         -->
 
         <!-- Back Right Leg -->

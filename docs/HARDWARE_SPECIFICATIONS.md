@@ -10,10 +10,10 @@ After researching the actual PiDog hardware, several discrepancies were found be
 
 ## Servo Motors
 
-### Current Simulation (INCORRECT)
+### Original Simulation (PARTIALLY INCORRECT)
 - **Model**: "SunFounder SF006FM 9g Digital Servo"
-- **Torque**: 0.127-0.137 Nm (1.3-1.4 kgf·cm) @ 4.8-6V
-- **Speed**: 5.8-7.0 rad/s (333-400°/s)
+- **Torque**: 0.127-0.137 Nm (1.3-1.4 kgf·cm) @ 4.8-6V ❌ **Underestimated**
+- **Speed**: 5.8-7.0 rad/s (333-400°/s) ✓ **Correct**
 - **Status**: ❌ **This servo model does not exist** in any public documentation
 
 ### Actual Hardware (RESEARCHED)
@@ -25,9 +25,9 @@ After researching the actual PiDog hardware, several discrepancies were found be
 - **Torque**:
   - @ 4.8V: **1.8 kgf·cm = 0.176 Nm**
   - @ 6.0V: **2.2 kgf·cm = 0.216 Nm**
-- **Speed**:
-  - @ 4.8V: 0.1s/60° = **600°/s = 10.47 rad/s**
-  - @ 6.0V: 0.08s/60° = **750°/s = 13.09 rad/s**
+- **Speed** (No Load Speed):
+  - @ 4.8V: 60°/0.18sec = **333.33°/s = 5.82 rad/s**
+  - @ 6.0V: 60°/0.15sec = **400°/s = 6.98 rad/s**
 - **Operating Voltage**: 4.8-6.0V (typically 5V)
 - **Stall Current**: 120-250mA (moving), up to 700mA (stall)
 - **Weight**: 13.4g
@@ -35,14 +35,14 @@ After researching the actual PiDog hardware, several discrepancies were found be
 - **Gear Type**: Metal (more durable than plastic SG90)
 
 ### Impact on Simulation
-The simulation currently **underestimates** servo capabilities:
-- **Torque**: Real servos are **28-58% MORE powerful** (0.176-0.216 Nm vs 0.127-0.137 Nm)
-- **Speed**: Real servos are **49-87% FASTER** (10.47-13.09 rad/s vs 5.8-7.0 rad/s)
+The simulation was **underestimating** servo torque but had correct speed:
+- **Torque**: Updated from 0.127-0.137 Nm → **0.176-0.216 Nm** (+28-58% MORE powerful)
+- **Speed**: Original values were **CORRECT** at 5.8-7.0 rad/s ✓
 
 This means:
-- ✅ Policies trained in simulation will be **conservative** (good for safety)
-- ⚠️ Real robot may be **more capable** than simulation suggests
-- ⚠️ May need to **re-tune** action scaling for real hardware
+- ✅ Speed simulation is accurate for real hardware
+- ✅ Torque update allows robot to apply stronger forces (better stability)
+- ⚠️ Existing policies may be slightly more conservative on torque
 
 ---
 
@@ -139,7 +139,8 @@ The simulation uses the correct camera model and FOV configuration.
 <!--
   Servo Specifications: MG90S Metal Gear Servo
   - Torque: 0.176-0.216 Nm (1.8-2.2 kgf·cm at 4.8-6V)
-  - Speed: 600-750°/s (10.47-13.09 rad/s)
+  - Speed: 333-400°/s (5.8-7.0 rad/s)
+  - No Load Speed: 4.8V: 60°/0.18sec, 6V: 60°/0.15sec
   - Operating voltage: 4.8-6.0V
   - Physical Range: 0-180° (0 to π radians)
   - Control Range: -90° to 180° (-π/2 to π radians)
@@ -165,8 +166,8 @@ self.servo_specs = {
     "range": (-np.pi/2, np.pi),           # Extended range to support negative angles
     "max_torque": 0.216,                  # Nm (at 6V)
     "min_torque": 0.176,                  # Nm (at 4.8V)
-    "max_speed": 13.09,                   # rad/s (750°/s at 6V)
-    "min_speed": 10.47,                   # rad/s (600°/s at 4.8V)
+    "max_speed": 7.0,                     # rad/s (400°/s at 6V) - 60°/0.15sec
+    "min_speed": 5.8,                     # rad/s (333°/s at 4.8V) - 60°/0.18sec
     "voltage_range": (4.8, 6.0),          # Operating voltage
 }
 ```
@@ -243,36 +244,33 @@ self.servo_specs = {
 
 ## Notes for Sim-to-Real Transfer
 
-### Conservative Simulation (Current State)
-The current simulation **understates** the robot's capabilities:
-- Servos are **weaker and slower** than reality
-- Gyroscope range is **half** of reality
+### Updated Simulation (Current State)
+The simulation has been updated to match real hardware:
+- **Servo Torque**: Updated from 0.127-0.137 Nm → **0.176-0.216 Nm** ✓
+- **Servo Speed**: Was already correct at 5.8-7.0 rad/s ✓
+- **Gyroscope Range**: Updated from ±1000°/s → **±2000°/s** ✓
+- **IMU Model**: Corrected documentation (MPU6050 → SH3001) ✓
+- **Ultrasonic Range**: Fixed to 400cm (was 450cm) ✓
 
 **Implications**:
-- ✅ **Safety margin**: Policies will be conservative on real hardware
-- ✅ **Won't damage** servos (commanding less than they can handle)
-- ⚠️ **May underperform**: Robot could move faster/more dynamically in reality
-- ⚠️ **Recovery behaviors** may be limited (gyroscope can measure faster rotations)
+- ✅ **Better sim-to-real transfer**: Simulation matches actual hardware
+- ✅ **Full capability utilization**: Robot can use full torque and sensor range
+- ✅ **Improved fall detection**: Gyroscope can measure faster rotations (±2000°/s)
+- ⚠️ **Existing models**: Models trained with old specs may perform slightly differently
 
 ### Recommended Approach
 
-**Option A: Match Real Hardware (Recommended)**
-- Update all specifications to match actual hardware
-- Train new policies with accurate parameters
-- **Pros**: Best sim-to-real transfer, utilize full robot capabilities
-- **Cons**: Need to retrain existing models
+**Current Status: Simulation Matched to Real Hardware ✓**
 
-**Option B: Keep Conservative (Safe)**
-- Keep current conservative specs
-- Add safety margin in domain randomization
-- **Pros**: Existing models remain valid, safer for initial deployment
-- **Cons**: Won't utilize full robot potential
+The simulation has been updated with accurate specifications. For new training:
+- ✅ Use updated specs for best sim-to-real transfer
+- ✅ Train new policies with accurate torque and sensor ranges
+- ✅ Test thoroughly in simulation before hardware deployment
 
-**Option C: Gradual Transition**
-- Train with conservative specs initially
-- Fine-tune with accurate specs later
-- **Pros**: Safe progressive deployment
-- **Cons**: Requires two training phases
+For existing trained models:
+- Models trained with old specs should still work (conservative on torque)
+- May benefit from fine-tuning with updated specifications
+- Test both old and new models to compare performance
 
 ---
 
@@ -294,7 +292,10 @@ Before deploying to real hardware:
 
 - **2025-11-10**: Initial hardware research and documentation
   - Identified servo model mismatch (SF006FM doesn't exist → MG90S likely)
+  - Updated servo torque (0.127-0.137 Nm → 0.176-0.216 Nm)
+  - **CORRECTED**: Servo speed was already correct (5.8-7.0 rad/s)
+    - Initial documentation incorrectly showed 10.47-13.09 rad/s
+    - Fixed to match actual spec: 4.8V: 60°/0.18sec, 6V: 60°/0.15sec
   - Corrected IMU model (MPU6050 → SH3001)
   - Updated gyroscope range (±1000°/s → ±2000°/s)
   - Fixed ultrasonic max range (450cm → 400cm)
-  - Documented servo performance underestimation

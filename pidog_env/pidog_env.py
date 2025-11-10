@@ -121,8 +121,8 @@ class PiDogEnv(gym.Env):
             "range": (-np.pi/2, np.pi),       # Extended range to support negative angles
             "max_torque": 0.216,              # Nm (at 6V)
             "min_torque": 0.176,              # Nm (at 4.8V)
-            "max_speed": 13.09,               # rad/s (750°/s at 6V)
-            "min_speed": 10.47,               # rad/s (600°/s at 4.8V)
+            "max_speed": 7.0,                 # rad/s (400°/s at 6V) - 60°/0.15sec
+            "min_speed": 5.8,                 # rad/s (333°/s at 4.8V) - 60°/0.18sec
             "voltage_range": (4.8, 6.0),      # Operating voltage
         }
 
@@ -386,7 +386,7 @@ class PiDogEnv(gym.Env):
 
         Applies realistic servo limitations:
         - Range: -90° to 180° (-π/2 to π radians)
-        - Max speed: 13.09 rad/s (750°/s at 6V)
+        - Max speed: 7.0 rad/s (400°/s at 6V)
         """
         scaled_action = np.zeros_like(action)
 
@@ -727,7 +727,7 @@ class PiDogEnv(gym.Env):
         for _ in range(self.frame_skip):
             mujoco.mj_step(self.model, self.data)
 
-            # Enforce realistic servo velocity limits (13.09 rad/s for MG90S servos)
+            # Enforce realistic servo velocity limits (7.0 rad/s for MG90S servos)
             # Clamp joint velocities to hardware specifications
             joint_velocities = self.data.qvel[6:14]  # 8 leg joints
             np.clip(joint_velocities, -self.servo_specs['max_speed'],
