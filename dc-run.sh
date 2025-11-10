@@ -1,2 +1,2 @@
 #!/usr/bin/env bash
-docker-compose run pidog_rl
+docker-compose run pidog_rl $@
