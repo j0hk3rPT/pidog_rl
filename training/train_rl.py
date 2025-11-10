@@ -40,7 +40,11 @@ except ImportError:
 
 # Try to import sb3-extra-buffers for compression
 try:
-    from sb3_extra_buffers.compressed import CompressedReplayBuffer, find_buffer_dtypes
+    from sb3_extra_buffers.compressed import (
+        CompressedReplayBuffer,
+        CompressedRolloutBuffer,
+        find_buffer_dtypes
+    )
     SB3_EXTRA_BUFFERS_AVAILABLE = True
 except ImportError:
     SB3_EXTRA_BUFFERS_AVAILABLE = False
@@ -213,7 +217,7 @@ def parse_args():
     parser.add_argument(
         "--use-compression",
         action="store_true",
-        help="Use compressed replay buffer (requires sb3-extra-buffers). Enables 70-95%% memory savings for SAC/TD3.",
+        help="Use compressed buffers (requires sb3-extra-buffers). Enables 70-95%% memory savings for PPO/SAC/TD3.",
     )
     parser.add_argument(
         "--compression-method",
@@ -409,7 +413,8 @@ def pretrain_with_bc(model, transitions, args):
 def create_algorithm(algorithm_name, env, args, buffer_dtypes=None):
     """Create RL algorithm instance."""
     # Determine if we're using compression (Box obs) or Dict obs
-    use_compression = args.use_compression and algorithm_name in ["sac", "td3"]
+    # Compression now works for PPO (CompressedRolloutBuffer), SAC, and TD3 (CompressedReplayBuffer)
+    use_compression = args.use_compression and algorithm_name in ["ppo", "sac", "td3"]
 
     if use_compression:
         # Using flattened Box observations for compression
@@ -420,7 +425,8 @@ def create_algorithm(algorithm_name, env, args, buffer_dtypes=None):
             "camera_width": args.camera_width,
             "camera_height": args.camera_height,
         }
-        print(f"Using compressed replay buffer with {args.compression_method}")
+        buffer_type = "CompressedRolloutBuffer" if algorithm_name == "ppo" else "CompressedReplayBuffer"
+        print(f"Using {buffer_type} with {args.compression_method}")
         print(f"Using PiDogFlattenedExtractor (Box observations)")
     else:
         # Using Dict observations (original format)
@@ -452,7 +458,7 @@ def create_algorithm(algorithm_name, env, args, buffer_dtypes=None):
         "seed": args.seed,
     }
 
-    # Add compression buffer for SAC/TD3 if enabled
+    # Add compression buffer if enabled
     # buffer_dtypes should already be initialized before creating environments
     if use_compression:
         if buffer_dtypes is None:
@@ -461,14 +467,22 @@ def create_algorithm(algorithm_name, env, args, buffer_dtypes=None):
                 "This is a bug in the training script."
             )
 
-        replay_buffer_kwargs = {
+        buffer_kwargs = {
             "dtypes": buffer_dtypes,
             "compression_method": args.compression_method,
         }
 
-        common_kwargs["replay_buffer_class"] = CompressedReplayBuffer
-        common_kwargs["replay_buffer_kwargs"] = replay_buffer_kwargs
-        print(f"✓ Configured CompressedReplayBuffer with {args.buffer_size:,} capacity")
+        if algorithm_name == "ppo":
+            # PPO uses RolloutBuffer (on-policy)
+            common_kwargs["rollout_buffer_class"] = CompressedRolloutBuffer
+            common_kwargs["rollout_buffer_kwargs"] = buffer_kwargs
+            buffer_size = args.n_steps * args.n_envs
+            print(f"✓ Configured CompressedRolloutBuffer (size={buffer_size:,} = {args.n_steps}*{args.n_envs})")
+        else:
+            # SAC/TD3 use ReplayBuffer (off-policy)
+            common_kwargs["replay_buffer_class"] = CompressedReplayBuffer
+            common_kwargs["replay_buffer_kwargs"] = buffer_kwargs
+            print(f"✓ Configured CompressedReplayBuffer with {args.buffer_size:,} capacity")
 
     if algorithm_name == "ppo":
         return PPO(
@@ -533,10 +547,12 @@ def main():
 
     # Handle compression flags
     # Compression requires Box observations (flattened)
-    use_dict_obs = not (args.use_compression and args.algorithm in ["sac", "td3"])
+    # Supported for PPO (CompressedRolloutBuffer), SAC, and TD3 (CompressedReplayBuffer)
+    use_dict_obs = not (args.use_compression and args.algorithm in ["ppo", "sac", "td3"])
+    use_compression = args.use_compression and args.algorithm in ["ppo", "sac", "td3"]
 
-    if args.use_compression and args.algorithm not in ["sac", "td3"]:
-        print(f"Warning: Compression only supported for SAC/TD3, ignoring --use-compression for {args.algorithm}")
+    if args.use_compression and args.algorithm not in ["ppo", "sac", "td3"]:
+        print(f"Warning: Compression only supported for PPO/SAC/TD3, ignoring --use-compression for {args.algorithm}")
 
     if args.use_compression and not SB3_EXTRA_BUFFERS_AVAILABLE:
         raise ImportError(
@@ -577,6 +593,7 @@ def main():
 
     # CRITICAL: Initialize compression BEFORE creating environments
     # This is required for proper JIT compilation with sb3-extra-buffers
+    # Works for PPO (CompressedRolloutBuffer), SAC, and TD3 (CompressedReplayBuffer)
     buffer_dtypes = None
     if use_compression:
         if not SB3_EXTRA_BUFFERS_AVAILABLE:
