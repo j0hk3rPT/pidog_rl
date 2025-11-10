@@ -29,7 +29,14 @@ import psutil
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from pidog_env import PiDogEnv
-from pidog_env.feature_extractors import PiDogCombinedExtractor
+from pidog_env.feature_extractors import PiDogCombinedExtractor, PiDogFlattenedExtractor
+
+# Try to import sb3-extra-buffers for compression
+try:
+    from sb3_extra_buffers.compressed import CompressedReplayBuffer, find_buffer_dtypes
+    SB3_EXTRA_BUFFERS_AVAILABLE = True
+except ImportError:
+    SB3_EXTRA_BUFFERS_AVAILABLE = False
 
 
 class BenchmarkCallback(BaseCallback):
@@ -72,13 +79,14 @@ class BenchmarkCallback(BaseCallback):
         }
 
 
-def make_env(use_camera=False, camera_width=84, camera_height=84):
+def make_env(use_camera=False, camera_width=84, camera_height=84, use_dict_obs=True):
     """Create environment."""
     def _init():
         env = PiDogEnv(
             use_camera=use_camera,
             camera_width=camera_width,
-            camera_height=camera_height
+            camera_height=camera_height,
+            use_dict_obs=use_dict_obs
         )
         env = Monitor(env)
         return env
@@ -148,34 +156,74 @@ def benchmark_config(config, args):
                 print("Skipping this configuration. Use --skip-large=False to test anyway.")
                 return None
 
-    # Create environment
-    env = DummyVecEnv([make_env(args.use_camera, args.camera_width, args.camera_height)])
+    # Determine observation format based on compression
+    use_dict_obs = not args.use_compression
+    use_compression = args.use_compression and SB3_EXTRA_BUFFERS_AVAILABLE
 
-    # Policy kwargs
+    if args.use_compression and not SB3_EXTRA_BUFFERS_AVAILABLE:
+        print("⚠️  Compression requested but sb3-extra-buffers not available!")
+        print("Install with: pip install 'sb3-extra-buffers[fast,extra]'")
+        print("Falling back to Dict observations (no compression)")
+        use_dict_obs = True
+        use_compression = False
+
+    # Create environment
+    env = DummyVecEnv([make_env(args.use_camera, args.camera_width, args.camera_height, use_dict_obs)])
+
+    # Policy and feature extractor configuration
+    if use_compression:
+        policy_type = "CnnPolicy"
+        extractor_class = PiDogFlattenedExtractor
+        extractor_kwargs = {
+            "features_dim": args.features_dim,
+            "camera_width": args.camera_width,
+            "camera_height": args.camera_height,
+        }
+        print(f"Using compressed buffer ({args.compression_method})")
+    else:
+        policy_type = "MultiInputPolicy"
+        extractor_class = PiDogCombinedExtractor
+        extractor_kwargs = {"features_dim": args.features_dim}
+        print("Using Dict observations (no compression)")
+
     policy_kwargs = {
-        "features_extractor_class": PiDogCombinedExtractor,
-        "features_extractor_kwargs": {"features_dim": args.features_dim},
+        "features_extractor_class": extractor_class,
+        "features_extractor_kwargs": extractor_kwargs,
     }
 
+    # SAC configuration
+    sac_kwargs = {
+        "policy": policy_type,
+        "env": env,
+        "policy_kwargs": policy_kwargs,
+        "learning_rate": 3e-4,
+        "buffer_size": config['buffer_size'],
+        "batch_size": config['batch_size'],
+        "train_freq": config['train_freq'],
+        "gradient_steps": config['gradient_steps'],
+        "learning_starts": config['learning_starts'],
+        "gamma": 0.99,
+        "tau": 0.005,
+        "verbose": 1,
+        "device": 'cuda' if args.device == 'cuda' else 'cpu',
+        "tensorboard_log": None,  # Disable for benchmarking
+    }
+
+    # Add compressed buffer if enabled
+    if use_compression:
+        buffer_dtypes = find_buffer_dtypes(
+            obs_shape=(args.camera_height * args.camera_width * 3 + 31,),
+            elem_dtype=np.float32,
+            compression_method=args.compression_method
+        )
+        sac_kwargs["replay_buffer_class"] = CompressedReplayBuffer
+        sac_kwargs["replay_buffer_kwargs"] = {
+            "dtypes": buffer_dtypes,
+            "compression_method": args.compression_method,
+        }
+
     # Create model
-    model = SAC(
-        "MultiInputPolicy",
-        env,
-        policy_kwargs=policy_kwargs,
-        learning_rate=3e-4,
-        buffer_size=config['buffer_size'],
-        batch_size=config['batch_size'],
-        train_freq=config['train_freq'],
-        gradient_steps=config['gradient_steps'],
-        learning_starts=config['learning_starts'],
-        gamma=0.99,
-        tau=0.005,
-        # NOTE: optimize_memory_usage NOT supported with Dict observations
-        # DictReplayBuffer does not support this parameter
-        verbose=1,
-        device='cuda' if args.device == 'cuda' else 'cpu',
-        tensorboard_log=None,  # Disable for benchmarking
-    )
+    model = SAC(**sac_kwargs)
 
     # Create callback
     callback = BenchmarkCallback()
@@ -238,6 +286,10 @@ def main():
                         choices=['fast', 'balanced', 'quality', 'memory-efficient', 'aggressive', 'all'],
                         default=['all'],
                         help='Which configs to test')
+    parser.add_argument('--use-compression', action='store_true',
+                        help='Use compressed replay buffer (requires sb3-extra-buffers)')
+    parser.add_argument('--compression-method', type=str, default='zstd-3',
+                        help='Compression method (default: zstd-3)')
     args = parser.parse_args()
 
     print(f"{'='*70}")
@@ -245,6 +297,11 @@ def main():
     print(f"{'='*70}")
     print(f"Timesteps per test: {args.timesteps:,}")
     print(f"Camera enabled:     {args.use_camera}")
+    print(f"Compression:        {args.use_compression}")
+    if args.use_compression:
+        print(f"Compression method: {args.compression_method}")
+        if not SB3_EXTRA_BUFFERS_AVAILABLE:
+            print(f"⚠️  WARNING: sb3-extra-buffers not available, compression will be disabled")
     print(f"Device:             {args.device}")
     print(f"Output file:        {args.output}")
 
