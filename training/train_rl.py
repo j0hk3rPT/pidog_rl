@@ -76,6 +76,24 @@ def parse_args():
         help="Number of steps per update (for PPO)",
     )
     parser.add_argument(
+        "--train-freq",
+        type=int,
+        default=1,
+        help="Update the model every train_freq steps (for SAC/TD3). Higher = faster but less frequent updates.",
+    )
+    parser.add_argument(
+        "--gradient-steps",
+        type=int,
+        default=1,
+        help="Number of gradient steps per update (for SAC/TD3). -1 means as many as train_freq.",
+    )
+    parser.add_argument(
+        "--buffer-size",
+        type=int,
+        default=1_000_000,
+        help="Replay buffer size (for SAC/TD3)",
+    )
+    parser.add_argument(
         "--save-freq",
         type=int,
         default=10_000,
@@ -413,6 +431,9 @@ def create_algorithm(algorithm_name, env, args):
             gamma=0.99,
             tau=0.005,
             learning_starts=1000,
+            train_freq=args.train_freq,
+            gradient_steps=args.gradient_steps,
+            buffer_size=args.buffer_size,
             **common_kwargs,
         )
     elif algorithm_name == "td3":
@@ -423,6 +444,9 @@ def create_algorithm(algorithm_name, env, args):
             tau=0.005,
             learning_starts=1000,
             policy_delay=2,
+            train_freq=args.train_freq,
+            gradient_steps=args.gradient_steps,
+            buffer_size=args.buffer_size,
             **common_kwargs,
         )
     else:
