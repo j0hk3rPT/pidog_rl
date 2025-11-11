@@ -23,7 +23,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from pidog_env import PiDogEnv
-from pidog_env.feature_extractors import PiDogCombinedExtractor, PiDogNatureCNNExtractor
+from pidog_env.feature_extractors import PiDogFlattenedExtractor
 
 # Try to import imitation for BC pretraining
 try:
@@ -33,6 +33,19 @@ try:
 except ImportError:
     IMITATION_AVAILABLE = False
     print("Warning: 'imitation' package not available, BC pretraining disabled")
+
+# Try to import sb3-extra-buffers for compression
+try:
+    from sb3_extra_buffers.compressed import (
+        CompressedReplayBuffer,
+        CompressedRolloutBuffer,
+        find_buffer_dtypes
+    )
+    SB3_EXTRA_BUFFERS_AVAILABLE = True
+except ImportError:
+    SB3_EXTRA_BUFFERS_AVAILABLE = False
+    print("Info: 'sb3-extra-buffers' not available, compression disabled"
+          " (install with: pip install 'sb3-extra-buffers[fast,extra]')")
 
 
 def parse_args():
@@ -90,8 +103,8 @@ def parse_args():
     parser.add_argument(
         "--buffer-size",
         type=int,
-        default=1_000_000,
-        help="Replay buffer size (for SAC/TD3)",
+        default=400_000,
+        help="Replay buffer size (for SAC/TD3). Default 400K fits in 30GB RAM with Dict observations (image+vector). Use 500K for max capacity or 300K for more headroom.",
     )
     parser.add_argument(
         "--save-freq",
@@ -197,16 +210,49 @@ def parse_args():
         default="trot_forward",
         help="Specific gait to use from demos (or 'all')",
     )
+    parser.add_argument(
+        "--use-compression",
+        action="store_true",
+        help="Use compressed buffers (requires sb3-extra-buffers). Enables 70-95%% memory savings for PPO/SAC/TD3.",
+    )
+    parser.add_argument(
+        "--compression-method",
+        type=str,
+        default="zstd-3",
+        help="Compression method for replay buffer (default: zstd-3). Options: zstd-3, zstd-5, lz4-frame/1, rle-jit, etc.",
+    )
+    parser.add_argument(
+        "--domain-randomization",
+        action="store_true",
+        default=True,
+        help="Enable domain randomization (physics parameters). Default: True",
+    )
+    parser.add_argument(
+        "--no-domain-randomization",
+        action="store_false",
+        dest="domain_randomization",
+        help="Disable domain randomization",
+    )
+    parser.add_argument(
+        "--curriculum-level",
+        type=int,
+        default=0,
+        choices=[-1, 0, 1, 2, 3],
+        help="Curriculum difficulty level (-1=standing only, 0=basic walking, 1-3=progressive difficulty). Default: 0",
+    )
     return parser.parse_args()
 
 
-def make_env(rank, seed=0, use_camera=True, camera_width=84, camera_height=84):
+def make_env(rank, seed=0, use_camera=True, camera_width=84, camera_height=84,
+             domain_randomization=True, curriculum_level=0):
     """Create a single environment instance."""
     def _init():
         env = PiDogEnv(
             use_camera=use_camera,
             camera_width=camera_width,
-            camera_height=camera_height
+            camera_height=camera_height,
+            domain_randomization=domain_randomization,
+            curriculum_level=curriculum_level,
         )
         env = Monitor(env)
         env.reset(seed=seed + rank)
@@ -381,26 +427,33 @@ def pretrain_with_bc(model, transitions, args):
     return model
 
 
-def create_algorithm(algorithm_name, env, args):
+def create_algorithm(algorithm_name, env, args, buffer_dtypes=None):
     """Create RL algorithm instance."""
-    # Always use MultiInputPolicy for compatibility across training stages
-    policy_type = "MultiInputPolicy"
+    # Always use CnnPolicy with PiDogFlattenedExtractor (Box observations)
+    # Compression works for PPO (CompressedRolloutBuffer), SAC, and TD3 (CompressedReplayBuffer)
+    use_compression = args.use_compression and algorithm_name in ["ppo", "sac", "td3"]
 
-    # Select feature extractor architecture
-    if args.use_nature_cnn:
-        extractor_class = PiDogNatureCNNExtractor
-        print("Using Nature DQN architecture (deeper CNN)")
-    else:
-        extractor_class = PiDogCombinedExtractor
-        print("Using standard combined CNN+MLP architecture")
+    # Always use CnnPolicy with flattened observations
+    policy_type = "CnnPolicy"
+    extractor_class = PiDogFlattenedExtractor
+    extractor_kwargs = {
+        "features_dim": args.features_dim,
+        "camera_width": args.camera_width,
+        "camera_height": args.camera_height,
+    }
+
+    if use_compression:
+        buffer_type = "CompressedRolloutBuffer" if algorithm_name == "ppo" else "CompressedReplayBuffer"
+        print(f"Using {buffer_type} with {args.compression_method}")
+
+    print(f"Policy: CnnPolicy with PiDogFlattenedExtractor")
+    print(f"Camera: {'Enabled' if args.use_camera else 'Disabled (zeros for image)'}")
+    print(f"Observation shape: (21199,) - always Box observations")
 
     policy_kwargs = {
         "features_extractor_class": extractor_class,
-        "features_extractor_kwargs": {"features_dim": args.features_dim},
+        "features_extractor_kwargs": extractor_kwargs,
     }
-
-    if not args.use_camera:
-        print("Note: Camera disabled - image observations will be zeros")
 
     common_kwargs = {
         "env": env,
@@ -411,6 +464,32 @@ def create_algorithm(algorithm_name, env, args):
         "tensorboard_log": args.log_dir,
         "seed": args.seed,
     }
+
+    # Add compression buffer if enabled
+    # buffer_dtypes should already be initialized before creating environments
+    if use_compression:
+        if buffer_dtypes is None:
+            raise ValueError(
+                "buffer_dtypes must be initialized before creating environments! "
+                "This is a bug in the training script."
+            )
+
+        buffer_kwargs = {
+            "dtypes": buffer_dtypes,
+            "compression_method": args.compression_method,
+        }
+
+        if algorithm_name == "ppo":
+            # PPO uses RolloutBuffer (on-policy)
+            common_kwargs["rollout_buffer_class"] = CompressedRolloutBuffer
+            common_kwargs["rollout_buffer_kwargs"] = buffer_kwargs
+            buffer_size = args.n_steps * args.n_envs
+            print(f"✓ Configured CompressedRolloutBuffer (size={buffer_size:,} = {args.n_steps}*{args.n_envs})")
+        else:
+            # SAC/TD3 use ReplayBuffer (off-policy)
+            common_kwargs["replay_buffer_class"] = CompressedReplayBuffer
+            common_kwargs["replay_buffer_kwargs"] = buffer_kwargs
+            print(f"✓ Configured CompressedReplayBuffer with {args.buffer_size:,} capacity")
 
     if algorithm_name == "ppo":
         return PPO(
@@ -425,30 +504,42 @@ def create_algorithm(algorithm_name, env, args):
             **common_kwargs,
         )
     elif algorithm_name == "sac":
-        return SAC(
-            policy_type,
-            batch_size=args.batch_size,
-            gamma=0.99,
-            tau=0.005,
-            learning_starts=1000,
-            train_freq=args.train_freq,
-            gradient_steps=args.gradient_steps,
-            buffer_size=args.buffer_size,
-            **common_kwargs,
-        )
+        sac_kwargs = {
+            "batch_size": args.batch_size,
+            "gamma": 0.99,
+            "tau": 0.005,
+            "learning_starts": 1000,
+            "train_freq": args.train_freq,
+            "gradient_steps": args.gradient_steps,
+            "buffer_size": args.buffer_size,
+        }
+        if use_compression:
+            # With compression: Can use larger buffer (e.g., 1M)
+            # Estimated memory: 1M * ~42KB/transition * 0.05 (zstd-3) ≈ 2GB
+            print(f"Estimated compressed buffer memory: ~{args.buffer_size * 0.00004:.1f}GB")
+        else:
+            # Without compression (Dict obs): Limited buffer size
+            # 400K * ~42KB/transition ≈ 16GB
+            print(f"Uncompressed buffer memory: ~{args.buffer_size * 0.00004:.1f}GB")
+
+        return SAC(policy_type, **sac_kwargs, **common_kwargs)
     elif algorithm_name == "td3":
-        return TD3(
-            policy_type,
-            batch_size=args.batch_size,
-            gamma=0.99,
-            tau=0.005,
-            learning_starts=1000,
-            policy_delay=2,
-            train_freq=args.train_freq,
-            gradient_steps=args.gradient_steps,
-            buffer_size=args.buffer_size,
-            **common_kwargs,
-        )
+        td3_kwargs = {
+            "batch_size": args.batch_size,
+            "gamma": 0.99,
+            "tau": 0.005,
+            "learning_starts": 1000,
+            "policy_delay": 2,
+            "train_freq": args.train_freq,
+            "gradient_steps": args.gradient_steps,
+            "buffer_size": args.buffer_size,
+        }
+        if use_compression:
+            print(f"Estimated compressed buffer memory: ~{args.buffer_size * 0.00004:.1f}GB")
+        else:
+            print(f"Uncompressed buffer memory: ~{args.buffer_size * 0.00004:.1f}GB")
+
+        return TD3(policy_type, **td3_kwargs, **common_kwargs)
     else:
         raise ValueError(f"Unknown algorithm: {algorithm_name}")
 
@@ -460,6 +551,20 @@ def main():
     # Handle camera flags (disable takes precedence)
     if args.disable_camera:
         args.use_camera = False
+
+    # Handle compression flags
+    # Compression supported for PPO (CompressedRolloutBuffer), SAC, and TD3 (CompressedReplayBuffer)
+    # Note: We always use Box observations (flattened), compression just adds buffer compression on top
+    use_compression = args.use_compression and args.algorithm in ["ppo", "sac", "td3"]
+
+    if args.use_compression and args.algorithm not in ["ppo", "sac", "td3"]:
+        print(f"Warning: Compression only supported for PPO/SAC/TD3, ignoring --use-compression for {args.algorithm}")
+
+    if args.use_compression and not SB3_EXTRA_BUFFERS_AVAILABLE:
+        raise ImportError(
+            "Compression requested but sb3-extra-buffers not installed. "
+            "Install with: pip install 'sb3-extra-buffers[fast,extra]'"
+        )
 
     # Set up experiment directory
     if args.experiment_name is None:
@@ -492,21 +597,46 @@ def main():
     print(f"Output directory: {experiment_dir}")
     print("=" * 60)
 
-    # Create vectorized environments
-    print(f"\nCreating {args.n_envs} parallel environments...")
-    if args.n_envs > 1:
-        env = SubprocVecEnv([
-            make_env(i, args.seed, args.use_camera, args.camera_width, args.camera_height)
-            for i in range(args.n_envs)
-        ])
-    else:
-        env = DummyVecEnv([
-            make_env(0, args.seed, args.use_camera, args.camera_width, args.camera_height)
-        ])
+    # CRITICAL: Initialize compression BEFORE creating environments
+    # This is required for proper JIT compilation with sb3-extra-buffers
+    # Works for PPO (CompressedRolloutBuffer), SAC, and TD3 (CompressedReplayBuffer)
+    buffer_dtypes = None
+    if use_compression:
+        if not SB3_EXTRA_BUFFERS_AVAILABLE:
+            raise ImportError(
+                "Compression requested but sb3-extra-buffers not installed. "
+                "Install with: pip install 'sb3-extra-buffers[fast,extra]'"
+            )
+        print(f"\nInitializing compression ({args.compression_method}) - this must happen BEFORE creating environments...")
+        obs_size = args.camera_height * args.camera_width * 3 + 31  # 21,199 for 84x84x3 + 31 sensors
+        buffer_dtypes = find_buffer_dtypes(
+            obs_shape=(obs_size,),
+            elem_dtype=np.float32,
+            compression_method=args.compression_method
+        )
+        print(f"✓ Compression initialized (obs_shape={obs_size}, method={args.compression_method})")
 
-    # Create evaluation environment
-    eval_env = DummyVecEnv([
-        make_env(args.n_envs, args.seed, args.use_camera, args.camera_width, args.camera_height)
+    # Create vectorized environments AFTER initializing compression
+    print(f"\nCreating {args.n_envs} parallel environments...")
+    print(f"Observation format: Box (flattened) - shape (21199,)")
+    print(f"Camera: {'Enabled' if args.use_camera else 'Disabled (zeros for image)'}")
+    print(f"Domain randomization: {'Enabled' if args.domain_randomization else 'Disabled'}")
+    curriculum_desc = {-1: "standing only", 0: "basic walking", 1: "intermediate", 2: "advanced", 3: "expert"}
+    print(f"Curriculum level: {args.curriculum_level} ({curriculum_desc.get(args.curriculum_level, 'unknown')})")
+
+    # Use same VecEnv type for training and eval to avoid warnings
+    VecEnvClass = SubprocVecEnv if args.n_envs > 1 else DummyVecEnv
+
+    env = VecEnvClass([
+        make_env(i, args.seed, args.use_camera, args.camera_width, args.camera_height,
+                args.domain_randomization, args.curriculum_level)
+        for i in range(args.n_envs)
+    ])
+
+    # Create evaluation environment with SAME wrapper type as training env
+    eval_env = VecEnvClass([
+        make_env(args.n_envs, args.seed, args.use_camera, args.camera_width, args.camera_height,
+                args.domain_randomization, args.curriculum_level)
     ])
 
     # Create or load model
@@ -520,7 +650,7 @@ def main():
             model = TD3.load(args.checkpoint, env=env, device=args.device)
     else:
         print(f"\nCreating new {args.algorithm.upper()} model...")
-        model = create_algorithm(args.algorithm, env, args)
+        model = create_algorithm(args.algorithm, env, args, buffer_dtypes=buffer_dtypes)
 
     # Print model info
     print(f"\nModel architecture:")

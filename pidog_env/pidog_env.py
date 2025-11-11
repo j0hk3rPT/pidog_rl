@@ -17,17 +17,20 @@ class PiDogEnv(gym.Env):
     This environment simulates the PiDog quadruped robot using MuJoCo physics.
     The goal is to train the robot to walk forward while maintaining balance.
 
-    Observation Space (MultiInput Dict):
-        image: RGB camera feed (84x84x3) from OV5647 camera
-        vector:
-            - Joint positions (8 leg joints)
-            - Joint velocities (8 leg joints)
-            - Body orientation (quaternion) from IMU
-            - Body linear velocity from IMU
-            - Body angular velocity from IMU gyroscope
-            - Body height estimate
-            - Ultrasonic distance sensor (HC-SR04)
-            - IMU accelerometer (3-axis)
+    Observation Space (Always Box, flattened):
+        Single flat array containing:
+        - Image pixels (84x84x3 = 21168 values, normalized to [0,1])
+          - If use_camera=False, this part is zeros
+        - Vector sensors (31 values):
+          - Joint positions (8 leg joints)
+          - Joint velocities (8 leg joints)
+          - Body orientation (quaternion) from IMU
+          - Body linear velocity from IMU
+          - Body angular velocity from IMU gyroscope
+          - Body height estimate
+          - Ultrasonic distance sensor (HC-SR04)
+          - IMU accelerometer (3-axis)
+        Total shape: (21199,) = 21168 + 31
 
     Action Space:
         - Target positions for 8 leg joints (continuous)
@@ -37,11 +40,13 @@ class PiDogEnv(gym.Env):
         - Energy efficiency
         - Stability (penalize falling)
         - Height maintenance
+        - Paw contact (all 4 paws on ground)
     """
 
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 30}
 
-    def __init__(self, render_mode=None, xml_path=None, use_camera=True, camera_width=84, camera_height=84):
+    def __init__(self, render_mode=None, xml_path=None, use_camera=True, camera_width=84, camera_height=84,
+                 domain_randomization=True, curriculum_level=0):
         super().__init__()
 
         # Set up paths
@@ -54,6 +59,10 @@ class PiDogEnv(gym.Env):
         # Load MuJoCo model
         self.model = mujoco.MjModel.from_xml_path(self.xml_path)
         self.data = mujoco.MjData(self.model)
+
+        # Domain randomization and curriculum learning
+        self.domain_randomization = domain_randomization
+        self.curriculum_level = curriculum_level  # 0=easiest, 3=hardest
 
         # Camera configuration for observations
         self.use_camera = use_camera
@@ -83,24 +92,20 @@ class PiDogEnv(gym.Env):
         # Define observation and action spaces
         # Vector observation: joint pos (8) + joint vel (8) + quat (4) + lin_vel (3) +
         #                     ang_vel (3) + height (1) + ultrasonic (1) + accel (3) = 31
-        vector_obs_dim = 8 + 8 + 4 + 3 + 3 + 1 + 1 + 3  # = 31
+        self.vector_obs_dim = 8 + 8 + 4 + 3 + 3 + 1 + 1 + 3  # = 31
+        self.image_obs_dim = camera_height * camera_width * 3  # Flattened image size
 
-        # Always use Dict observation space for policy compatibility
-        # When camera is disabled, image will be filled with zeros
-        self.observation_space = spaces.Dict({
-            "image": spaces.Box(
-                low=0,
-                high=255,
-                shape=(camera_height, camera_width, 3),
-                dtype=np.uint8
-            ),
-            "vector": spaces.Box(
-                low=-np.inf,
-                high=np.inf,
-                shape=(vector_obs_dim,),
-                dtype=np.float32
-            )
-        })
+        # Always use flattened Box observation space
+        # Image (flattened, normalized to [0,1]) + vector sensors
+        # Total: 84*84*3 + 31 = 21,168 + 31 = 21,199
+        # Note: Image part is zeros if use_camera=False
+        obs_dim = self.image_obs_dim + self.vector_obs_dim
+        self.observation_space = spaces.Box(
+            low=-np.inf,
+            high=np.inf,
+            shape=(obs_dim,),
+            dtype=np.float32
+        )
 
         # Action: target joint positions for 8 leg joints
         # Normalized to [-1, 1], will be scaled to actual joint limits
@@ -111,30 +116,36 @@ class PiDogEnv(gym.Env):
             dtype=np.float32
         )
 
-        # Servo specifications (SunFounder SF006FM 9g Digital Servo)
+        # Servo specifications (MG90S Metal Gear Servo)
         # Real hardware constraints for sim-to-real transfer
         self.servo_specs = {
-            "range": (-np.pi/2, np.pi),       # Extended range to support negative angles
-            "max_torque": 0.137,              # Nm (at 6V)
-            "min_torque": 0.127,              # Nm (at 4.8V)
-            "max_speed": 7.0,                 # rad/s (400°/s)
-            "min_speed": 5.8,                 # rad/s (333°/s)
+            "range": (-np.pi/2, np.pi/2),     # Extended range to support negative angles
+            "max_torque": 0.216,              # Nm (at 6V)
+            "min_torque": 0.176,              # Nm (at 4.8V)
+            "max_speed": 7.0,                 # rad/s (400°/s at 6V) - 60°/0.15sec
+            "min_speed": 5.8,                 # rad/s (333°/s at 4.8V) - 60°/0.18sec
             "voltage_range": (4.8, 6.0),      # Operating voltage
         }
 
         # Joint limits (extended to support found neutral angles)
         # Hip neutral: -30° (-π/6), Knee neutral: -45° (-π/4)
         self.joint_limits = {
-            "hip": (-np.pi/2, np.pi),         # -90° to 180° range
-            "knee": (-np.pi/2, np.pi),        # -90° to 180° range
+            "hip": (-np.pi/2, np.pi/2),         # -90° to 90° (180 range)
+            "knee": (-np.pi/2, np.pi/2),        # -90° to 90° (180 range)
         }
 
-        # Neutral standing angles (found by systematic search)
-        self.neutral_hip = -np.pi / 6     # -30°
-        self.neutral_knee = -np.pi / 4    # -45°
+        # Neutral standing angles (aligned with grounded initialization)
+        # Starting from 0° (straight legs) and letting robot find stable pose
+        self.neutral_hip = 0.0      # 0° - straight hip
+        self.neutral_knee = 0.0     # 0° - straight knee
+        # Note: Robot will learn optimal standing pose through training
 
         # Previous action for velocity limiting
         self.prev_action = None
+
+        # Tracking for acceleration penalties (industry standard)
+        self.prev_joint_vel = None  # For joint acceleration penalty
+        self.prev_base_vel = None   # For base acceleration penalty
 
         # Simulation parameters
         self.dt = self.model.opt.timestep
@@ -145,7 +156,7 @@ class PiDogEnv(gym.Env):
 
         # Episode tracking
         self.step_count = 0
-        self.max_steps = 5000  # 100 seconds at 50Hz - gives more time to learn walking
+        self.max_steps = 1000  # 100 seconds at 50Hz - gives more time to learn walking
 
         # Velocity history for stationary detection
         # Track forward velocity over ~1 second (depends on frame_skip and dt)
@@ -184,7 +195,7 @@ class PiDogEnv(gym.Env):
                 self.sensor_ids[name] = {'id': -1, 'adr': 0, 'dim': 0}
 
     def _init_leg_geom_ids(self):
-        """Initialize geom IDs for leg self-collision detection."""
+        """Initialize geom IDs for leg self-collision detection and paw contact."""
         self.leg_geom_ids = []
 
         # Find all geoms with "_leg_" in their name (leg collision geoms)
@@ -193,6 +204,35 @@ class PiDogEnv(gym.Env):
             geom_name = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_GEOM, i)
             if geom_name and '_leg_' in geom_name:
                 self.leg_geom_ids.append(i)
+
+
+    def _count_paws_on_ground(self) -> int:
+        """
+        Count how many paws are currently in contact with the ground.
+
+        Returns:
+            Number of paws touching ground (0-4)
+        """
+        # Get ground geom ID
+        try:
+            ground_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'ground')
+        except:
+            ground_id = 0  # Assume first geom is ground if not found
+
+        paws_in_contact = 0
+
+        # Check all active contacts
+        for i in range(self.data.ncon):
+            contact = self.data.contact[i]
+            geom1 = contact.geom1
+            geom2 = contact.geom2
+
+            # Check if paw geom is touching ground
+            if (geom1 == ground_id and geom2 in self.leg_geom_ids) or \
+               (geom2 == ground_id and geom1 in self.leg_geom_ids):
+                paws_in_contact += 1
+
+        return paws_in_contact
 
     def _get_camera_obs(self) -> np.ndarray:
         """Get RGB camera observation from pidog_camera."""
@@ -246,8 +286,91 @@ class PiDogEnv(gym.Env):
 
         return leg_collision_count
 
-    def _get_obs(self) -> Dict[str, np.ndarray]:
-        """Get current observation with camera and all sensors."""
+    def _detect_belly_touch(self) -> bool:
+        """
+        Detect if belly/chest touches the ground.
+
+        Returns:
+            True if belly is touching ground, False otherwise
+        """
+        # Get ground geom ID
+        ground_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'ground')
+
+        # Body geom names that indicate belly/chest contact
+        belly_geom_names = ['chest_c0', 'chest_c1', 'chest_c2',
+                            'torso_left_c0', 'torso_left_c1', 'torso_left_c2',
+                            'torso_right_c0', 'torso_right_c1', 'torso_right_c2']
+
+        # Get belly geom IDs
+        belly_geom_ids = []
+        for name in belly_geom_names:
+            geom_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, name)
+            if geom_id >= 0:
+                belly_geom_ids.append(geom_id)
+
+        # Check all active contacts
+        for i in range(self.data.ncon):
+            contact = self.data.contact[i]
+            geom1 = contact.geom1
+            geom2 = contact.geom2
+
+            # Check if belly geom is touching ground
+            if (geom1 == ground_id and geom2 in belly_geom_ids) or \
+               (geom2 == ground_id and geom1 in belly_geom_ids):
+                return True
+
+        return False
+
+    def _detect_torso_fall(self) -> bool:
+        """
+        Detect actual fall: torso/body touching ground.
+
+        Simple and reliable: If torso touches ground = fall.
+        No complex force calculations needed.
+
+        Returns:
+            True if fallen, False otherwise
+        """
+        # Get ground geom ID
+        ground_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'ground')
+
+        # Torso/body geom names that should NOT touch ground (indicates fall)
+        torso_geom_names = [
+            'chest_c0', 'chest_c1', 'chest_c2',
+            'torso_left_c0', 'torso_left_c1', 'torso_left_c2',
+            'torso_right_c0', 'torso_right_c1', 'torso_right_c2',
+            'body_c0', 'body_c1', 'body_c2',  # Main body collision geoms
+        ]
+
+        # Get torso geom IDs
+        torso_geom_ids = []
+        for name in torso_geom_names:
+            geom_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, name)
+            if geom_id >= 0:
+                torso_geom_ids.append(geom_id)
+
+        # Check all active contacts
+        for i in range(self.data.ncon):
+            contact = self.data.contact[i]
+            geom1 = contact.geom1
+            geom2 = contact.geom2
+
+            # Check if torso geom is touching ground
+            if (geom1 == ground_id and geom2 in torso_geom_ids) or \
+               (geom2 == ground_id and geom1 in torso_geom_ids):
+                # Torso touching ground = FALL
+                return True
+
+        return False
+
+    def _get_obs(self):
+        """Get current observation with camera and all sensors.
+
+        Returns:
+            np.ndarray: Flattened observation array of shape (21199,)
+                       First 21168 values are image pixels (normalized to [0,1], zeros if no camera)
+                       Last 31 values are sensor readings
+        """
         # Joint positions (first 8 actuated joints)
         joint_pos = self.data.qpos[7:15].copy()  # Skip free joint (first 7 DOF)
 
@@ -287,11 +410,11 @@ class PiDogEnv(gym.Env):
         # Get camera image (or zeros if camera disabled)
         camera_obs = self._get_camera_obs()
 
-        # Always return dict observation for policy compatibility
-        return {
-            "image": camera_obs,
-            "vector": vector_obs
-        }
+        # Always return flattened Box observation
+        # Flatten image and concatenate with vector, all as float32
+        image_flat = camera_obs.flatten().astype(np.float32) / 255.0  # Normalize to [0, 1]
+        flattened_obs = np.concatenate([image_flat, vector_obs])
+        return flattened_obs
 
     def _scale_action(self, action):
         """
@@ -299,7 +422,7 @@ class PiDogEnv(gym.Env):
 
         Applies realistic servo limitations:
         - Range: -90° to 180° (-π/2 to π radians)
-        - Max speed: 7.0 rad/s (400°/s)
+        - Max speed: 7.0 rad/s (400°/s at 6V)
         """
         scaled_action = np.zeros_like(action)
 
@@ -327,25 +450,41 @@ class PiDogEnv(gym.Env):
         """
         Compute reward based on current state.
 
-        REWARD STRUCTURE:
-        1. Forward velocity (MAIN GOAL) - high weight
+        REWARD STRUCTURE (varies by curriculum):
+        - Level -1 (Standing): Focus on balance, no forward motion required
+        - Level 0+ (Walking): Progressive forward velocity requirements
+
+        Components:
+        1. Forward velocity / Standing reward - curriculum dependent
         2. Obstacle avoidance using ultrasonic - critical for safety
         3. Upright stability - important for not falling
-        4. Stationary penalty - must keep moving
-        5. Energy efficiency - smooth movements
-        6. Lateral stability - walk straight
-        7. Leg collision penalty - avoid unnatural gaits
-        8. Height maintenance - prevent crouching/lowering
+        4. Fall penalty - ONLY for actual falls (torso touching ground)
+        5. Stationary penalty (disabled for standing mode)
+        6. Energy efficiency - smooth movements
+        7. Lateral stability - walk straight
+        8. Leg collision penalty - avoid unnatural gaits
+        9. Paw contact reward - keep all 4 paws on ground (STANDING MODE ONLY)
+        10. Height maintenance - stand tall
         """
         forward_vel = self.data.qvel[0]
 
-        # ============= 1. FORWARD VELOCITY REWARD (MAIN GOAL) =============
-        # Reward positive forward velocity, penalize backward/stopped
-        velocity_reward = forward_vel
+        # ============= 1. FORWARD VELOCITY / STANDING REWARD =============
+        if self.curriculum_level < 0:
+            # STANDING MODE: Reward staying still and balanced
+            # Penalize movement, reward stillness
+            velocity_reward = -2.0 * abs(forward_vel)  # Penalize any movement
 
-        # Bonus for reaching target speed
-        if forward_vel >= self.target_forward_velocity:
-            velocity_reward += 1.0
+            # Bonus for staying nearly still
+            if abs(forward_vel) < 0.05:  # Less than 5 cm/s
+                velocity_reward += 2.0  # Big reward for standing still
+        else:
+            # WALKING MODE: Reward forward velocity
+            velocity_reward = forward_vel
+
+            # Bonus for reaching target speed (adjusted by curriculum)
+            target_vel = self.target_forward_velocity * (1.0 + 0.2 * self.curriculum_level)
+            if forward_vel >= target_vel:
+                velocity_reward += 1.0
 
 
         # ============= 2. OBSTACLE AVOIDANCE (ULTRASONIC SENSOR) =============
@@ -361,60 +500,184 @@ class PiDogEnv(gym.Env):
                 obstacle_penalty = -2.0 * (self.obstacle_danger_distance - ultrasonic_dist)
 
 
-        # ============= 3. UPRIGHT STABILITY =============
+        # ============= 3. ORIENTATION STABILITY (CRITICAL FIX #4) =============
+        # FIXED: Use roll/pitch angles instead of confusing quaternion reward
+        # Industry standard: Penalize tilting (roll) and pitching
         body_quat = self.data.qpos[3:7]  # MuJoCo format: [w, x, y, z]
-        # w component (1 = upright, 0 = sideways/tilted)
-        upright_reward = 2.0 * (body_quat[0] - 0.7)  # Bonus for staying upright
+
+        # Convert quaternion to roll and pitch (simplified approximation)
+        # For small angles: roll ≈ 2*arctan2(x, w), pitch ≈ 2*arctan2(y, w)
+        roll = 2.0 * np.arctan2(body_quat[1], body_quat[0])
+        pitch = 2.0 * np.arctan2(body_quat[2], body_quat[0])
+
+        # Penalize tilting (always negative or zero, clear signal)
+        orientation_penalty = -0.5 * (roll**2 + pitch**2)
 
 
-        # ============= 4. STATIONARY PENALTY =============
+        # ============= 4. FALL PENALTY (ONLY FOR ACTUAL FALLS) =============
+        # Check for actual fall: torso touching ground
+        is_fallen = self._detect_torso_fall()
+        fall_penalty = 0.0
+        if is_fallen:
+            # Large penalty for actual fall
+            fall_penalty = -20.0
+            # Store fall state for termination check
+            self._has_fallen = True
+        else:
+            self._has_fallen = False
+
+
+        # ============= 5. STATIONARY PENALTY (DISABLED IN STANDING MODE) =============
         # Track velocity history to detect if robot is stuck
         self.velocity_history.append(abs(forward_vel))
         if len(self.velocity_history) > self.velocity_history_size:
             self.velocity_history.pop(0)  # Remove oldest
 
         stationary_penalty = 0.0
-        if len(self.velocity_history) >= self.velocity_history_size:
+        # Only penalize being stationary in walking mode (curriculum >= 0)
+        if self.curriculum_level >= 0 and len(self.velocity_history) >= self.velocity_history_size:
             # Check average velocity over last ~1 second
             avg_velocity = np.mean(self.velocity_history)
             if avg_velocity < 0.05:  # Moving less than 5 cm/s for 1 second
                 stationary_penalty = -5.0  # Heavy penalty for being stuck
 
 
-        # ============= 5. ENERGY EFFICIENCY =============
-        # Encourage smooth, efficient movements
-        action_penalty = -0.005 * np.sum(np.square(self.data.ctrl))
+        # ============= 6. ENERGY EFFICIENCY & SMOOTHNESS =============
+        # Industry standard: Strong penalties for violent/jerky movements
+
+        # 6a. Action smoothness (increased from 0.005 to industry standard)
+        action_penalty = -0.02 * np.sum(np.square(self.data.ctrl))
+
+        # 6b. CRITICAL FIX #1: Torque penalty (MISSING in original)
+        # Penalize actual joint torques to prevent flailing
+        torques = self.data.actuator_force  # Actual forces applied by servos
+        torque_penalty = -0.0002 * np.sum(np.square(torques))
+
+        # 6c. CRITICAL FIX #2: Joint acceleration penalty (MISSING in original)
+        # Penalize jerky movements between timesteps
+        joint_velocities = self.data.qvel[6:14]  # 8 leg joints
+        if self.prev_joint_vel is not None:
+            joint_acc = (joint_velocities - self.prev_joint_vel) / (self.dt * self.frame_skip)
+            joint_acc_penalty = -0.01 * np.sum(np.square(joint_acc))
+        else:
+            joint_acc_penalty = 0.0
+
+        # 6d. Base acceleration penalty (smooth body movements)
+        base_vel = self.data.qvel[:3]  # x, y, z velocity
+        if self.prev_base_vel is not None:
+            base_acc = (base_vel - self.prev_base_vel) / (self.dt * self.frame_skip)
+            base_acc_penalty = -0.5 * np.sum(np.square(base_acc))
+        else:
+            base_acc_penalty = 0.0
 
 
-        # ============= 6. LATERAL STABILITY =============
+        # ============= 7. LATERAL STABILITY =============
         # Penalize sideways drift - should walk straight
         lateral_vel = abs(self.data.qvel[1])
         lateral_penalty = -0.5 * lateral_vel
 
 
-        # ============= 7. LEG SELF-COLLISION PENALTY (NEW!) =============
+        # ============= 8. LEG SELF-COLLISION PENALTY =============
         # Penalize when legs collide with each other (unnatural gait)
         leg_collisions = self._detect_leg_collisions()
         collision_penalty = -2.0 * leg_collisions  # -2.0 per collision
 
 
-        # ============= 8. HEIGHT MAINTENANCE (RE-ADDED!) =============
-        # Penalize deviation from standing height - prevents crouching/lowering
+        # ============= 9. PAW CONTACT REWARD (STANDING MODE ONLY) =============
+        # Reward keeping all 4 paws on the ground - ONLY in standing training
+        paws_on_ground = self._count_paws_on_ground()
+
+        if self.curriculum_level < 0:
+            # STANDING MODE: Strong reward for all 4 paws on ground
+            if paws_on_ground == 4:
+                paw_contact_reward = 3.0  # Maximum reward for perfect stance
+            elif paws_on_ground == 3:
+                paw_contact_reward = 1.0  # Partial reward
+            else:
+                paw_contact_reward = -2.0  # Penalty for <3 paws
+        else:
+            # WALKING MODE: No paw contact reward
+            # Let the agent learn natural walking gait without constraint
+            paw_contact_reward = 0.0
+
+
+        # ============= 10. SURVIVAL BONUS =============
+        # Reward for staying alive and not falling
+        # At 50Hz, this adds +5.0 per second of stable operation
+        survival_bonus = 0.1
+
+
+        # ============= 11. GAIT QUALITY / STANDING POSTURE (CRITICAL FIX #5) =============
+        # FIXED: Simplified standing mode to remove conflicting objectives
+
+        if self.curriculum_level < 0:
+            # STANDING MODE: Simple, clear objective - minimize movement and stay near neutral
+
+            # 11b. Joint velocity penalty (want to be still)
+            joint_vel_penalty = -0.5 * np.sum(np.square(joint_velocities))
+
+            # 11c. Base velocity penalty (body should not move)
+            base_vel_penalty = -2.0 * np.sum(np.square(base_vel))
+
+            # Combine standing rewards
+            gait_quality = 0.0  # Not used in standing
+            posture_reward = joint_vel_penalty + base_vel_penalty
+
+        else:
+            # WALKING MODE: Reward rhythmic leg movement
+            leg_vel_variance = np.var(joint_velocities)
+
+            # Good gait has moderate variance (legs moving rhythmically)
+            # Too low = frozen/stationary, too high = flailing/chaotic
+            gait_quality = 0.0
+            if 0.5 < leg_vel_variance < 3.0:  # Sweet spot for coordinated movement
+                gait_quality = 1.0
+            elif 0.2 < leg_vel_variance < 5.0:  # Acceptable range
+                gait_quality = 0.5
+            posture_reward = 0.0
+
+
+        # ============= 12. HEIGHT MAINTENANCE (ESPECIALLY FOR STANDING) =============
         body_height = self.data.qpos[2]
-        target_height = 0.14  # Standing height from reset
-        height_penalty = -2.0 * abs(body_height - target_height)
+        target_height = 0.14  # Target standing height
+        height_error = abs(body_height - target_height)
+
+        if self.curriculum_level < 0:
+            # STANDING MODE: Strong reward for maintaining height
+            height_reward = max(0, 3.0 - height_error * 30.0)  # 0-3 based on error
+        else:
+            # WALKING MODE: Moderate reward for height
+            height_reward = max(0, 1.0 - height_error * 10.0)  # 0-1 based on error
 
 
         # ============= COMBINE ALL REWARDS =============
+        # Industry-standard reward structure with critical smoothness penalties
         reward = (
-            3.0 * velocity_reward +      # Forward speed (PRIMARY - 50%)
-            1.0 * obstacle_penalty +     # Avoid obstacles (CRITICAL - 20%)
-            1.5 * upright_reward +       # Stay balanced (IMPORTANT - 20%)
-            1.0 * stationary_penalty +   # Don't get stuck (IMPORTANT - 10%)
-            1.0 * height_penalty +       # Maintain standing height (IMPORTANT)
-            action_penalty +             # Be efficient
-            lateral_penalty +            # Walk straight
-            collision_penalty            # Avoid leg collisions (NEW!)
+            # Task objectives (40-50%)
+            2.0 * velocity_reward +      # Forward speed / standing still
+            1.5 * height_reward +        # Height maintenance (increased for standing)
+            2.0 * paw_contact_reward +   # NEW: Keep paws on ground (standing mode only)
+
+            # Stability (20-30%)
+            2.0 * orientation_penalty +  # FIXED: Stay upright (roll/pitch)
+            1.0 * lateral_penalty +      # Walk straight / no lateral drift
+            1.0 * obstacle_penalty +     # Avoid obstacles
+
+            # Smoothness & energy (25-35%) - CRITICAL FIXES
+            action_penalty +             # Smooth actions (4x stronger now)
+            torque_penalty +             # NEW: Prevent flailing
+            joint_acc_penalty +          # NEW: Smooth joint movements
+            base_acc_penalty +           # NEW: Smooth body movements
+
+            # Gait & posture (10-15%)
+            1.0 * gait_quality +         # Gait rhythmicity (walking only)
+            1.0 * posture_reward +       # FIXED: Simplified standing mode
+
+            # Safety & constraints (10-20%)
+            1.0 * fall_penalty +         # Penalize actual falls (-20)
+            1.0 * stationary_penalty +   # Don't get stuck (walking only)
+            collision_penalty +          # Avoid leg collisions
+            1.0 * survival_bonus         # Reward staying alive (+0.1/step)
         )
 
         return reward
@@ -423,42 +686,17 @@ class PiDogEnv(gym.Env):
         """
         Check if episode should terminate (fall detection).
 
-        COMPLETE FAILURE conditions:
-        1. Robot falls to the side (roll/pitch too high)
-        2. Robot body touches ground (height too low)
-        3. Robot flips upside down
+        NEW APPROACH: Only terminate on ACTUAL FALLS (torso touching ground).
+        Simple contact detection - if torso hits ground, it's a fall.
+
+        This allows the robot to:
+        - Recover from tilted positions (no early termination)
+        - Learn from near-fall situations
+        - Develop robust behaviors through curriculum learning
         """
-        body_height = self.data.qpos[2]
-        body_quat = self.data.qpos[3:7]  # MuJoCo format: [w, x, y, z]
-
-        # 1. Body touching ground - COMPLETE FAILURE
-        if body_height < 0.05:
-            return True
-
-        # 2. Fallen to the side - COMPLETE FAILURE
-        # Quaternion w-component indicates upright orientation
-        # w = 1.0 means perfectly upright
-        # w = 0.0 means 90° tilt (on its side)
-        # w < 0.5 means tilted more than ~60° - definitely fallen
-        quat_w = body_quat[0]  # MuJoCo stores as [w, x, y, z]
-        if quat_w < 0.5:
-            return True
-
-        # 3. Additional check: using roll and pitch from quaternion
-        # Calculate roll and pitch to detect side falls more accurately
-        # Extract components: w=body_quat[0], x=body_quat[1], y=body_quat[2], z=body_quat[3]
-        w, x, y, z = body_quat
-
-        # Roll (x-axis rotation)
-        roll = np.arctan2(2.0 * (w * x + y * z),
-                         1.0 - 2.0 * (x**2 + y**2))
-
-        # Pitch (y-axis rotation)
-        pitch = np.arcsin(2.0 * (w * y - z * x))
-
-        # If tilted more than 50° in any direction - FALLEN
-        max_tilt = np.pi / 3.6  # ~50 degrees
-        if abs(roll) > max_tilt or abs(pitch) > max_tilt:
+        # Only terminate if we detected an actual fall (torso touching ground)
+        # Fall detection is done in _compute_reward() and stored in self._has_fallen
+        if hasattr(self, '_has_fallen') and self._has_fallen:
             return True
 
         return False
@@ -466,6 +704,55 @@ class PiDogEnv(gym.Env):
     def _is_truncated(self):
         """Check if episode should be truncated (max steps)."""
         return self.step_count >= self.max_steps
+
+    def _apply_domain_randomization(self):
+        """
+        Apply domain randomization to physics parameters.
+
+        Randomizes:
+        - Body mass (±20%)
+        - Ground friction (±30%)
+        - Joint damping (±25%)
+        - Actuator gains (±15%)
+        - Initial body height (±10%)
+
+        This helps sim-to-real transfer by training on diverse physics.
+        """
+        if not self.domain_randomization:
+            return
+
+        # 1. Randomize body mass (±20%)
+        # Find body ID for main body
+        try:
+            body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, 'body')
+            original_mass = 0.5  # kg (default PiDog mass)
+            self.model.body_mass[body_id] = original_mass * np.random.uniform(0.8, 1.2)
+        except:
+            pass  # Body not found, skip
+
+        # 2. Randomize ground friction (±30%)
+        try:
+            ground_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'ground')
+            original_friction = 1.0
+            self.model.geom_friction[ground_id, 0] = original_friction * np.random.uniform(0.7, 1.3)
+        except:
+            pass
+
+        # 3. Randomize joint damping (±25%)
+        # Apply to all actuated joints
+        for i in range(8):  # 8 leg joints
+            original_damping = 0.1
+            self.model.dof_damping[i + 6] = original_damping * np.random.uniform(0.75, 1.25)
+
+        # 4. Randomize actuator gains (±15%)
+        # This simulates servo performance variation
+        for i in range(self.model.nu):
+            # Store original gain if not already stored
+            if not hasattr(self, '_original_actuator_gain'):
+                self._original_actuator_gain = self.model.actuator_gainprm.copy()
+
+            gain_variation = np.random.uniform(0.85, 1.15)
+            self.model.actuator_gainprm[i, 0] = self._original_actuator_gain[i, 0] * gain_variation
 
     def reset(self, seed=None, options=None):
         """Reset the environment."""
@@ -478,30 +765,70 @@ class PiDogEnv(gym.Env):
         if seed is not None:
             np.random.seed(seed)
 
-        # Randomize initial joint positions slightly around neutral
-        # Use correct neutral angles: hip=-30°, knee=-45°
+        # Apply domain randomization
+        self._apply_domain_randomization()
+
+        # IMPROVED INITIALIZATION: Start lower with paws on ground
+        # Set joints to 0° (or small angles) for natural standing pose
+        joint_noise = 0.05 * (1.0 + 0.5 * self.curriculum_level)
         for i in range(4):  # 4 legs
-            # Hip joints (even indices)
-            self.data.qpos[7 + i*2] = self.neutral_hip + np.random.uniform(-0.1, 0.1)
-            # Knee joints (odd indices)
-            self.data.qpos[7 + i*2 + 1] = self.neutral_knee + np.random.uniform(-0.1, 0.1)
+            # Start joints near 0° for natural standing pose
+            # Add small noise for curriculum diversity
+            self.data.qpos[7 + i*2] = np.random.uniform(-joint_noise, joint_noise)      # Hip ~0°
+            self.data.qpos[7 + i*2 + 1] = np.random.uniform(-joint_noise, joint_noise)  # Knee ~0°
 
-        # Set body to target height (based on neutral standing height)
-        self.data.qpos[2] = 0.14
+        # CRITICAL FIX: Start body MUCH lower to avoid drop
+        # Calculate approximate standing height based on leg geometry
+        # With straight legs (0°), robot should be ~0.12-0.14m tall
+        # Start slightly lower to ensure paws are grounded
+        start_height = 0.05  # Start lower, robot will stand up naturally
+        self.data.qpos[2] = start_height
 
-        # Forward the simulation to settle
+        # Randomize initial orientation slightly (curriculum-dependent)
+        if self.curriculum_level >= 1:
+            # Add small initial tilt for higher difficulty
+            angle_noise = 0.05 * self.curriculum_level  # Up to 0.15 rad (~8.5°) at level 3
+            self.data.qpos[3:7] = np.array([
+                1.0,  # w
+                np.random.uniform(-angle_noise, angle_noise),  # x (roll)
+                np.random.uniform(-angle_noise, angle_noise),  # y (pitch)
+                0.0   # z (yaw)
+            ])
+            # Normalize quaternion
+            self.data.qpos[3:7] /= np.linalg.norm(self.data.qpos[3:7])
+
+        # Let robot settle to ground naturally with paws making contact
+        # Run simulation steps with minimal control (servos hold position)
+        settle_steps = 100  # Increased to ~1 second of settling
+        for _ in range(settle_steps):
+            # # Set servos to hold current position (natural standing)
+            # self.data.ctrl[:] = self.data.qpos[7:15]
+            mujoco.mj_step(self.model, self.data)
+
+        # Final forward pass to ensure consistent state
         mujoco.mj_forward(self.model, self.data)
 
         # Reset action tracking for velocity limiting
         self.prev_action = None
 
+        # Reset velocity tracking for acceleration penalties
+        self.prev_joint_vel = None
+        self.prev_base_vel = None
+
         # Reset velocity history for stationary detection
         self.velocity_history = []
+
+        # Reset fall flag
+        self._has_fallen = False
 
         self.step_count = 0
 
         obs = self._get_obs()
-        info = {}
+        info = {
+            'curriculum_level': self.curriculum_level,
+            'domain_randomization': self.domain_randomization,
+            'paws_on_ground': self._count_paws_on_ground()
+        }
 
         return obs, info
 
@@ -517,17 +844,21 @@ class PiDogEnv(gym.Env):
         for _ in range(self.frame_skip):
             mujoco.mj_step(self.model, self.data)
 
-            # Enforce realistic servo velocity limits (7.0 rad/s for SF006FM servos)
+            # Enforce realistic servo velocity limits (7.0 rad/s for MG90S servos)
             # Clamp joint velocities to hardware specifications
             joint_velocities = self.data.qvel[6:14]  # 8 leg joints
             np.clip(joint_velocities, -self.servo_specs['max_speed'],
                    self.servo_specs['max_speed'], out=joint_velocities)
 
-        # Get observation
         obs = self._get_obs()
 
         # Compute reward
         reward = self._compute_reward()
+
+        # Track velocities for next step's acceleration penalties
+        # (MUST be after reward computation, before next step)
+        self.prev_joint_vel = self.data.qvel[6:14].copy()  # 8 leg joints
+        self.prev_base_vel = self.data.qvel[:3].copy()     # x, y, z velocity
 
         # Check termination conditions
         terminated = self._is_terminated()
@@ -537,7 +868,10 @@ class PiDogEnv(gym.Env):
         info = {
             "forward_velocity": self.data.qvel[0],
             "body_height": self.data.qpos[2],
+            "paws_on_ground": self._count_paws_on_ground(),
             "step": self.step_count,
+            "has_fallen": self._has_fallen if hasattr(self, '_has_fallen') else False,
+            "curriculum_level": self.curriculum_level,
         }
 
         self.step_count += 1

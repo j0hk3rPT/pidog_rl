@@ -55,6 +55,24 @@ def parse_args():
         default=42,
         help="Random seed",
     )
+    parser.add_argument(
+        "--use-camera",
+        action="store_true",
+        default=True,
+        help="Use camera observations",
+    )
+    parser.add_argument(
+        "--camera-width",
+        type=int,
+        default=84,
+        help="Camera width (default: 84)",
+    )
+    parser.add_argument(
+        "--camera-height",
+        type=int,
+        default=84,
+        help="Camera height (default: 84)",
+    )
     return parser.parse_args()
 
 
@@ -172,13 +190,24 @@ def main():
     print(f"Episodes: {args.n_episodes}")
     print(f"Deterministic: {args.deterministic}")
     print(f"Render: {args.render}")
+    print(f"Camera: {args.use_camera} ({args.camera_width}x{args.camera_height})")
     if args.record_video:
         print(f"Recording to: {args.record_video}")
     print("=" * 60)
 
     # Create environment
+    # Note: Always uses Box observations (flattened) - shape (21199,)
+    print(f"\nCreating environment...")
+    print(f"Observation format: Box (flattened) - shape (21199,)")
+    print(f"Camera: {'Enabled' if args.use_camera else 'Disabled (zeros for image)'}")
+
     render_mode = "human" if args.render else ("rgb_array" if args.record_video else None)
-    env = PiDogEnv(render_mode=render_mode)
+    env = PiDogEnv(
+        render_mode=render_mode,
+        use_camera=args.use_camera,
+        camera_width=args.camera_width,
+        camera_height=args.camera_height,
+    )
 
     # Load model
     model = load_model(args.model_path, args.algorithm, env)

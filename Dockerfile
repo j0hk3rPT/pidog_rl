@@ -38,7 +38,8 @@ RUN pip install --no-cache-dir \
     tensorboard \
     matplotlib \
     numpy \
-    imitation
+    imitation \
+    "sb3-extra-buffers[fast,extra]"
 
 # Set working directory (repo will be mounted here via docker-compose volume)
 WORKDIR /workspace/pidog_rl
