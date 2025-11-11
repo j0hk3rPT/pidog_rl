@@ -40,6 +40,7 @@ class PiDogEnv(gym.Env):
         - Energy efficiency
         - Stability (penalize falling)
         - Height maintenance
+        - Paw contact (all 4 paws on ground)
     """
 
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 30}
@@ -194,7 +195,7 @@ class PiDogEnv(gym.Env):
                 self.sensor_ids[name] = {'id': -1, 'adr': 0, 'dim': 0}
 
     def _init_leg_geom_ids(self):
-        """Initialize geom IDs for leg self-collision detection."""
+        """Initialize geom IDs for leg self-collision detection and paw contact."""
         self.leg_geom_ids = []
 
         # Find all geoms with "_leg_" in their name (leg collision geoms)
@@ -203,6 +204,35 @@ class PiDogEnv(gym.Env):
             geom_name = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_GEOM, i)
             if geom_name and '_leg_' in geom_name:
                 self.leg_geom_ids.append(i)
+
+
+    def _count_paws_on_ground(self) -> int:
+        """
+        Count how many paws are currently in contact with the ground.
+
+        Returns:
+            Number of paws touching ground (0-4)
+        """
+        # Get ground geom ID
+        try:
+            ground_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, 'ground')
+        except:
+            ground_id = 0  # Assume first geom is ground if not found
+
+        paws_in_contact = 0
+
+        # Check all active contacts
+        for i in range(self.data.ncon):
+            contact = self.data.contact[i]
+            geom1 = contact.geom1
+            geom2 = contact.geom2
+
+            # Check if paw geom is touching ground
+            if (geom1 == ground_id and geom2 in self.leg_geom_ids) or \
+               (geom2 == ground_id and geom1 in self.leg_geom_ids):
+                paws_in_contact += 1
+
+        return paws_in_contact
 
     def _get_camera_obs(self) -> np.ndarray:
         """Get RGB camera observation from pidog_camera."""
@@ -433,6 +463,8 @@ class PiDogEnv(gym.Env):
         6. Energy efficiency - smooth movements
         7. Lateral stability - walk straight
         8. Leg collision penalty - avoid unnatural gaits
+        9. Paw contact reward - keep all 4 paws on ground (STANDING MODE ONLY)
+        10. Height maintenance - stand tall
         """
         forward_vel = self.data.qvel[0]
 
@@ -551,36 +583,45 @@ class PiDogEnv(gym.Env):
         collision_penalty = -2.0 * leg_collisions  # -2.0 per collision
 
 
-        # ============= 9. SURVIVAL BONUS =============
+        # ============= 9. PAW CONTACT REWARD (STANDING MODE ONLY) =============
+        # Reward keeping all 4 paws on the ground - ONLY in standing training
+        paws_on_ground = self._count_paws_on_ground()
+
+        if self.curriculum_level < 0:
+            # STANDING MODE: Strong reward for all 4 paws on ground
+            if paws_on_ground == 4:
+                paw_contact_reward = 3.0  # Maximum reward for perfect stance
+            elif paws_on_ground == 3:
+                paw_contact_reward = 1.0  # Partial reward
+            else:
+                paw_contact_reward = -2.0  # Penalty for <3 paws
+        else:
+            # WALKING MODE: No paw contact reward
+            # Let the agent learn natural walking gait without constraint
+            paw_contact_reward = 0.0
+
+
+        # ============= 10. SURVIVAL BONUS =============
         # Reward for staying alive and not falling
         # At 50Hz, this adds +5.0 per second of stable operation
         survival_bonus = 0.1
 
 
-        # ============= 10. GAIT QUALITY / STANDING POSTURE (CRITICAL FIX #5) =============
+        # ============= 11. GAIT QUALITY / STANDING POSTURE (CRITICAL FIX #5) =============
         # FIXED: Simplified standing mode to remove conflicting objectives
 
         if self.curriculum_level < 0:
             # STANDING MODE: Simple, clear objective - minimize movement and stay near neutral
 
-            # # 10a. Joint position error (want to be near neutral)
-            # joint_pos = self.data.qpos[7:15]
-            # neutral_positions = np.array([self.neutral_hip, self.neutral_knee] * 4)
-            # pose_error_squared = np.sum(np.square(joint_pos - neutral_positions))
-            # standing_pose_penalty = -1.0 * pose_error_squared
-
-            # 10b. Joint velocity penalty (want to be still)
-            # (joint_velocities already defined in section 6c)
+            # 11b. Joint velocity penalty (want to be still)
             joint_vel_penalty = -0.5 * np.sum(np.square(joint_velocities))
 
-            # 10c. Base velocity penalty (body should not move)
-            # (base_vel already defined in section 6d)
+            # 11c. Base velocity penalty (body should not move)
             base_vel_penalty = -2.0 * np.sum(np.square(base_vel))
 
             # Combine standing rewards
             gait_quality = 0.0  # Not used in standing
             posture_reward = joint_vel_penalty + base_vel_penalty
-            # posture_reward = standing_pose_penalty + joint_vel_penalty + base_vel_penalty
 
         else:
             # WALKING MODE: Reward rhythmic leg movement
@@ -596,14 +637,14 @@ class PiDogEnv(gym.Env):
             posture_reward = 0.0
 
 
-        # ============= 11. HEIGHT MAINTENANCE (ESPECIALLY FOR STANDING) =============
+        # ============= 12. HEIGHT MAINTENANCE (ESPECIALLY FOR STANDING) =============
         body_height = self.data.qpos[2]
         target_height = 0.14  # Target standing height
         height_error = abs(body_height - target_height)
 
         if self.curriculum_level < 0:
             # STANDING MODE: Strong reward for maintaining height
-            height_reward = max(0, 2.0 - height_error * 20.0)  # 0-2 based on error
+            height_reward = max(0, 3.0 - height_error * 30.0)  # 0-3 based on error
         else:
             # WALKING MODE: Moderate reward for height
             height_reward = max(0, 1.0 - height_error * 10.0)  # 0-1 based on error
@@ -614,7 +655,8 @@ class PiDogEnv(gym.Env):
         reward = (
             # Task objectives (40-50%)
             2.0 * velocity_reward +      # Forward speed / standing still
-            1.0 * height_reward +        # Height maintenance
+            1.5 * height_reward +        # Height maintenance (increased for standing)
+            2.0 * paw_contact_reward +   # NEW: Keep paws on ground (standing mode only)
 
             # Stability (20-30%)
             2.0 * orientation_penalty +  # FIXED: Stay upright (roll/pitch)
@@ -726,8 +768,8 @@ class PiDogEnv(gym.Env):
         # Apply domain randomization
         self._apply_domain_randomization()
 
-        # IMPROVED INITIALIZATION: Start with paws on ground
-        # Set joints to 0° (or small angles) and let robot settle naturally
+        # IMPROVED INITIALIZATION: Start lower with paws on ground
+        # Set joints to 0° (or small angles) for natural standing pose
         joint_noise = 0.05 * (1.0 + 0.5 * self.curriculum_level)
         for i in range(4):  # 4 legs
             # Start joints near 0° for natural standing pose
@@ -735,9 +777,11 @@ class PiDogEnv(gym.Env):
             self.data.qpos[7 + i*2] = np.random.uniform(-joint_noise, joint_noise)      # Hip ~0°
             self.data.qpos[7 + i*2 + 1] = np.random.uniform(-joint_noise, joint_noise)  # Knee ~0°
 
-        # Start body at a higher position and let it settle to ground
-        # This ensures paws make contact naturally rather than "dropping"
-        start_height = 0.0  # Start slightly higher
+        # CRITICAL FIX: Start body MUCH lower to avoid drop
+        # Calculate approximate standing height based on leg geometry
+        # With straight legs (0°), robot should be ~0.12-0.14m tall
+        # Start slightly lower to ensure paws are grounded
+        start_height = 0.05  # Start lower, robot will stand up naturally
         self.data.qpos[2] = start_height
 
         # Randomize initial orientation slightly (curriculum-dependent)
@@ -754,12 +798,11 @@ class PiDogEnv(gym.Env):
             self.data.qpos[3:7] /= np.linalg.norm(self.data.qpos[3:7])
 
         # Let robot settle to ground naturally with paws making contact
-        # Run simulation steps with zero control (gravity pulls it down)
-        # This prevents the "drop" effect and ensures stable ground contact
-        settle_steps = 50  # ~0.5 seconds of settling at 50Hz
+        # Run simulation steps with minimal control (servos hold position)
+        settle_steps = 100  # Increased to ~1 second of settling
         for _ in range(settle_steps):
-            # Zero control during settling (servos relaxed)
-            self.data.ctrl[:] = 0.0
+            # # Set servos to hold current position (natural standing)
+            # self.data.ctrl[:] = self.data.qpos[7:15]
             mujoco.mj_step(self.model, self.data)
 
         # Final forward pass to ensure consistent state
@@ -783,7 +826,8 @@ class PiDogEnv(gym.Env):
         obs = self._get_obs()
         info = {
             'curriculum_level': self.curriculum_level,
-            'domain_randomization': self.domain_randomization
+            'domain_randomization': self.domain_randomization,
+            'paws_on_ground': self._count_paws_on_ground()
         }
 
         return obs, info
@@ -824,6 +868,7 @@ class PiDogEnv(gym.Env):
         info = {
             "forward_velocity": self.data.qvel[0],
             "body_height": self.data.qpos[2],
+            "paws_on_ground": self._count_paws_on_ground(),
             "step": self.step_count,
             "has_fallen": self._has_fallen if hasattr(self, '_has_fallen') else False,
             "curriculum_level": self.curriculum_level,
